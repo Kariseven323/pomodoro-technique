@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
-use crate::errors::AppResult;
 #[cfg(windows)]
 use crate::errors::AppError;
+use crate::errors::AppResult;
 
 /// 向前端广播“终止黑名单进程结果”的事件名。
 pub const EVENT_KILL_RESULT: &str = "pomodoro://kill_result";
@@ -85,6 +85,7 @@ pub fn list_processes() -> AppResult<Vec<ProcessInfo>> {
 
 /// 终止所有匹配 `process_name` 的进程（返回可用于 UI 展示的汇总结果）。
 pub fn kill_by_name(process_name: &str) -> AppResult<KillSummary> {
+    tracing::debug!(target: "blacklist", "尝试终止进程：{}", process_name);
     let mut system = System::new_all();
     system.refresh_all();
 
@@ -106,6 +107,7 @@ pub fn kill_by_name(process_name: &str) -> AppResult<KillSummary> {
     pids.sort_unstable();
 
     if pids.is_empty() {
+        tracing::debug!(target: "blacklist", "未找到匹配进程：{}", process_name);
         return Ok(KillSummary {
             items: vec![KillItem {
                 name: process_name.to_string(),
@@ -150,6 +152,19 @@ pub fn kill_by_name(process_name: &str) -> AppResult<KillSummary> {
         failed,
         requires_admin,
     });
+
+    if failed > 0 {
+        tracing::warn!(
+            target: "blacklist",
+            "终止进程存在失败：name={} killed={} failed={} requiresAdmin={}",
+            process_name,
+            killed,
+            failed,
+            requires_admin
+        );
+    } else {
+        tracing::info!(target: "blacklist", "终止进程成功：name={} killed={}", process_name, killed);
+    }
 
     Ok(KillSummary {
         items,
@@ -218,8 +233,8 @@ fn eq_process_name(a: &str, b: &str) -> bool {
 fn icon_data_url_best_effort(exe_path: &str) -> AppResult<Option<String>> {
     #[cfg(windows)]
     {
-        use std::path::Path;
         use base64::Engine as _;
+        use std::path::Path;
         let png = extract_exe_icon_png(Path::new(exe_path), 32)?;
         Ok(Some(format!(
             "data:image/png;base64,{}",
@@ -239,6 +254,7 @@ fn icon_data_url_best_effort(exe_path: &str) -> AppResult<Option<String>> {
 fn extract_exe_icon_png(exe_path: &std::path::Path, size: i32) -> AppResult<Vec<u8>> {
     use image::{ImageBuffer, Rgba};
     use windows::core::PCWSTR;
+    use windows::Win32::Foundation::HANDLE;
     use windows::Win32::Graphics::Gdi::{
         CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDIBits, SelectObject,
         BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HBRUSH, HDC, HGDIOBJ,
@@ -247,7 +263,6 @@ fn extract_exe_icon_png(exe_path: &std::path::Path, size: i32) -> AppResult<Vec<
     use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
     use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON};
     use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, DrawIconEx, DI_NORMAL};
-    use windows::Win32::Foundation::HANDLE;
 
     let wide = to_wide_null(exe_path.to_string_lossy().as_ref());
     let mut shfi = SHFILEINFOW::default();
@@ -347,10 +362,8 @@ fn extract_exe_icon_png(exe_path: &std::path::Path, size: i32) -> AppResult<Vec<
             px.swap(0, 2);
         }
 
-        let img: ImageBuffer<Rgba<u8>, _> =
-            ImageBuffer::from_raw(size as u32, size as u32, buf).ok_or_else(|| {
-                AppError::Invariant("从像素缓冲构建图像失败".to_string())
-            })?;
+        let img: ImageBuffer<Rgba<u8>, _> = ImageBuffer::from_raw(size as u32, size as u32, buf)
+            .ok_or_else(|| AppError::Invariant("从像素缓冲构建图像失败".to_string()))?;
 
         let mut png: Vec<u8> = Vec::new();
         img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
@@ -364,5 +377,8 @@ fn extract_exe_icon_png(exe_path: &std::path::Path, size: i32) -> AppResult<Vec<
 #[cfg(windows)]
 fn to_wide_null(s: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
-    std::ffi::OsStr::new(s).encode_wide().chain(Some(0)).collect()
+    std::ffi::OsStr::new(s)
+        .encode_wide()
+        .chain(Some(0))
+        .collect()
 }

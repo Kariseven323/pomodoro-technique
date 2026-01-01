@@ -1,8 +1,10 @@
 //! 番茄钟应用（Tauri 2）后端入口与命令注册。
 
+mod analysis;
 mod app_data;
 mod commands;
 mod errors;
+mod logging;
 mod processes;
 mod state;
 mod timer;
@@ -25,8 +27,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
+            logging::init_logging(app.handle())?;
+
             let store = app
                 .store_builder(STORE_PATH)
                 .auto_save(Duration::from_millis(0))
@@ -40,6 +45,13 @@ pub fn run() {
             setup_window_close_to_tray(app)?;
             spawn_timer_task(app.handle().clone());
 
+            // PRD v2：启动时应用“窗口置顶”设置。
+            if let Some(window) = app.get_webview_window("main") {
+                let state = app.state::<AppState>();
+                let always_on_top = state.data_snapshot().settings.always_on_top;
+                let _ = window.set_always_on_top(always_on_top);
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -47,9 +59,24 @@ pub fn run() {
             commands::get_store_paths,
             commands::open_store_dir,
             commands::update_settings,
+            commands::set_goals,
             commands::set_current_tag,
             commands::add_tag,
             commands::set_blacklist,
+            commands::get_history,
+            commands::set_history_remark,
+            commands::get_focus_analysis,
+            commands::get_templates,
+            commands::save_template,
+            commands::delete_template,
+            commands::apply_template,
+            commands::set_always_on_top,
+            commands::set_mini_mode,
+            commands::export_history,
+            commands::open_log_dir,
+            commands::debug_generate_history,
+            commands::debug_clear_history,
+            commands::exit_app,
             commands::list_processes,
             commands::timer_start,
             commands::timer_pause,
@@ -62,17 +89,22 @@ pub fn run() {
 }
 
 /// 从 store 中加载 `AppData`；若为空则写入默认值并返回。
-fn load_or_init_app_data(
-    store: &tauri_plugin_store::Store<tauri::Wry>,
-) -> AppResult<AppData> {
+fn load_or_init_app_data(store: &tauri_plugin_store::Store<tauri::Wry>) -> AppResult<AppData> {
     if let Some(value) = store.get(STORE_KEY) {
-        let data: AppData = serde_json::from_value(value)?;
+        let mut data: AppData = serde_json::from_value(value)?;
+        tracing::info!(target: "storage", "已从 store 加载 AppData");
+        if data.migrate_v2() {
+            store.set(STORE_KEY, serde_json::to_value(&data)?);
+            store.save()?;
+            tracing::info!(target: "storage", "已完成 AppData v2 迁移并写回 store");
+        }
         return Ok(data);
     }
 
     let data = AppData::default();
     store.set(STORE_KEY, serde_json::to_value(&data)?);
     store.save()?;
+    tracing::info!(target: "storage", "首次启动：已写入默认 AppData");
     Ok(data)
 }
 
@@ -87,12 +119,9 @@ fn setup_window_close_to_tray(app: &mut tauri::App) -> AppResult<()> {
 
     let window_for_event = window.clone();
     window.on_window_event(move |event| {
-        match event {
-            WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                let _ = window_for_event.hide();
-            }
-            _ => {}
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = window_for_event.hide();
         }
     });
 

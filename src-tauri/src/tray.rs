@@ -4,9 +4,9 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::Manager as _;
 
+use crate::app_data::Phase;
 use crate::errors::{AppError, AppResult};
 use crate::state::AppState;
-use crate::timer::Phase;
 
 /// 托盘菜单项 id：开始。
 const MENU_START_ID: &str = "tray.start";
@@ -79,7 +79,8 @@ pub fn setup_tray(app: &mut tauri::App) -> AppResult<()> {
                 ..
             } = event
             {
-                if button == tauri::tray::MouseButton::Left && button_state == tauri::tray::MouseButtonState::Up
+                if button == tauri::tray::MouseButton::Left
+                    && button_state == tauri::tray::MouseButtonState::Up
                 {
                     if let Some(window) = tray.app_handle().get_webview_window("main") {
                         let _ = window.show();
@@ -109,7 +110,9 @@ pub fn refresh_tray(state: &AppState) -> AppResult<()> {
 
     let text = format_mm_ss(snapshot.remaining_seconds);
     let rgba = build_tray_icon_rgba(&text, snapshot.phase, snapshot.is_running)?;
-    handles.tray.set_icon(Some(Image::new_owned(rgba, 32, 32)))?;
+    handles
+        .tray
+        .set_icon(Some(Image::new_owned(rgba, 32, 32)))?;
 
     // 启用状态：运行中只能暂停；未运行只能开始。
     let _ = handles.start_item.set_enabled(!snapshot.is_running);

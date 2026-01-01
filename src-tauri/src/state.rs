@@ -6,7 +6,7 @@ use tauri::Emitter as _;
 
 use crate::app_data::{AppData, STORE_KEY};
 use crate::errors::{AppError, AppResult};
-use crate::timer::{TickResult, TimerRuntime, TimerSnapshot};
+use crate::timer::{TickResult, TimerRuntime, TimerSnapshot, WorkCompletedEvent};
 use crate::tray::TrayHandles;
 
 /// 后端全局状态（通过 `app.manage(...)` 注入 Tauri State）。
@@ -16,6 +16,18 @@ pub struct AppState {
     data: Mutex<AppData>,
     timer: Mutex<TimerRuntime>,
     tray: Mutex<Option<TrayHandles>>,
+    window_mode: Mutex<WindowModeState>,
+}
+
+/// 窗口模式运行态（用于迷你模式恢复窗口大小/位置）。
+#[derive(Debug, Clone, Default)]
+pub struct WindowModeState {
+    /// 是否处于迷你模式。
+    pub mini_mode: bool,
+    /// 进入迷你模式前的窗口尺寸（逻辑像素）。
+    pub prev_size: Option<(u32, u32)>,
+    /// 进入迷你模式前的窗口位置（逻辑像素）。
+    pub prev_position: Option<(i32, i32)>,
 }
 
 impl AppState {
@@ -32,6 +44,7 @@ impl AppState {
             data: Mutex::new(data),
             timer: Mutex::new(timer),
             tray: Mutex::new(None),
+            window_mode: Mutex::new(WindowModeState::default()),
         }
     }
 
@@ -57,6 +70,20 @@ impl AppState {
         self.tray.lock().unwrap().clone()
     }
 
+    /// 获取窗口模式状态快照（用于命令内部决策）。
+    pub fn window_mode_snapshot(&self) -> WindowModeState {
+        self.window_mode.lock().unwrap().clone()
+    }
+
+    /// 原子更新窗口模式状态（不持久化）。
+    pub fn update_window_mode(
+        &self,
+        f: impl FnOnce(&mut WindowModeState) -> AppResult<()>,
+    ) -> AppResult<()> {
+        let mut mode = self.window_mode.lock().unwrap();
+        f(&mut mode)
+    }
+
     /// 原子更新：修改数据并持久化到 store。
     pub fn update_data(&self, f: impl FnOnce(&mut AppData) -> AppResult<()>) -> AppResult<()> {
         let mut data = self.data.lock().unwrap();
@@ -65,7 +92,10 @@ impl AppState {
     }
 
     /// 修改计时器运行态（不会持久化）。
-    pub fn update_timer(&self, f: impl FnOnce(&mut TimerRuntime, &AppData) -> AppResult<()>) -> AppResult<()> {
+    pub fn update_timer(
+        &self,
+        f: impl FnOnce(&mut TimerRuntime, &AppData) -> AppResult<()>,
+    ) -> AppResult<()> {
         let data = self.data.lock().unwrap();
         let mut timer = self.timer.lock().unwrap();
         f(&mut timer, &data)
@@ -88,13 +118,27 @@ impl AppState {
 
     /// 推送当前计时器快照事件给前端。
     pub fn emit_timer_snapshot(&self) -> AppResult<()> {
-        self.app.emit(crate::timer::EVENT_SNAPSHOT, self.timer_snapshot())?;
+        self.app
+            .emit(crate::timer::EVENT_SNAPSHOT, self.timer_snapshot())?;
         Ok(())
     }
 
     /// 推送进程终止结果事件给前端。
     pub fn emit_kill_result(&self, payload: crate::processes::KillSummary) -> AppResult<()> {
-        self.app.emit(crate::processes::EVENT_KILL_RESULT, payload)?;
+        self.app
+            .emit(crate::processes::EVENT_KILL_RESULT, payload)?;
+        Ok(())
+    }
+
+    /// 推送“工作阶段完成并写入历史”的事件给前端。
+    pub fn emit_work_completed(&self, payload: WorkCompletedEvent) -> AppResult<()> {
+        self.app.emit(crate::timer::EVENT_WORK_COMPLETED, payload)?;
+        Ok(())
+    }
+
+    /// 推送一个“无结构负载”的简单事件给前端（用于提示 UI 刷新）。
+    pub fn emit_simple_event(&self, event: &str) -> AppResult<()> {
+        self.app.emit(event, true)?;
         Ok(())
     }
 
@@ -106,14 +150,20 @@ impl AppState {
         if result.history_changed {
             self.persist_locked(&data)?;
         }
+        if let Some(payload) = result.work_completed_event.clone() {
+            let _ = self.emit_work_completed(payload);
+        }
         Ok(result)
     }
 
     /// 持久化 `AppData` 到 store（要求调用方已持有锁，避免重复锁）。
     fn persist_locked(&self, data: &AppData) -> AppResult<()> {
-        self.store
-            .set(STORE_KEY, serde_json::to_value(data).map_err(AppError::from)?);
+        self.store.set(
+            STORE_KEY,
+            serde_json::to_value(data).map_err(AppError::from)?,
+        );
         self.store.save()?;
+        tracing::debug!(target: "storage", "数据已持久化到 store");
         Ok(())
     }
 

@@ -9,24 +9,12 @@ use tauri::Manager as _;
 use tauri_plugin_notification::NotificationExt as _;
 use tokio::time::sleep;
 
-use crate::app_data::{AppData, HistoryDay, HistoryRecord, Settings};
+use crate::app_data::{AppData, HistoryDay, HistoryRecord, Phase, Settings};
 use crate::errors::{AppError, AppResult};
 use crate::state::AppState;
 
 /// 向前端广播计时器状态的事件名。
 pub const EVENT_SNAPSHOT: &str = "pomodoro://snapshot";
-
-/// 计时器阶段。
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum Phase {
-    /// 工作（番茄）。
-    Work,
-    /// 短休息。
-    ShortBreak,
-    /// 长休息。
-    LongBreak,
-}
 
 /// 标签计数条目。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,6 +60,57 @@ impl TodayStats {
     }
 }
 
+/// 本周统计（总数 + 按标签分组）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeekStats {
+    /// 本周完成的番茄总数。
+    pub total: u32,
+    /// 按标签统计。
+    pub by_tag: Vec<TagCount>,
+}
+
+impl WeekStats {
+    /// 从持久化 `AppData` 计算本周统计（周一为一周起始）。
+    pub fn from_app_data(data: &AppData) -> Self {
+        let (from, to) = current_week_range();
+        let mut map: BTreeMap<String, u32> = BTreeMap::new();
+        let mut total = 0u32;
+
+        for day in &data.history {
+            if day.date < from || day.date > to {
+                continue;
+            }
+            for r in &day.records {
+                total += 1;
+                *map.entry(r.tag.clone()).or_insert(0) += 1;
+            }
+        }
+
+        Self {
+            total,
+            by_tag: map
+                .into_iter()
+                .map(|(tag, count)| TagCount { tag, count })
+                .collect(),
+        }
+    }
+}
+
+/// 目标进度（每日/每周）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalProgress {
+    /// 每日目标（0 表示未设置）。
+    pub daily_goal: u32,
+    /// 今日已完成。
+    pub daily_completed: u32,
+    /// 每周目标（0 表示未设置）。
+    pub weekly_goal: u32,
+    /// 本周已完成。
+    pub weekly_completed: u32,
+}
+
 /// 前端渲染/托盘展示所需的计时器快照。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +129,10 @@ pub struct TimerSnapshot {
     pub settings: Settings,
     /// 今日统计（用于主界面展示）。
     pub today_stats: TodayStats,
+    /// 本周统计（用于主界面展示）。
+    pub week_stats: WeekStats,
+    /// 目标进度（用于主界面展示与提醒判断）。
+    pub goal_progress: GoalProgress,
 }
 
 /// tick 结果：用于决定是否需要持久化与是否发生阶段切换。
@@ -100,7 +143,24 @@ pub struct TickResult {
     pub phase_ended: bool,
     /// 是否在“休息结束”后自动开始了工作阶段（用于触发黑名单终止逻辑）。
     pub work_auto_started: bool,
+    /// 若本次 tick 完成了工作阶段，则携带“新记录已写入”的事件负载。
+    pub work_completed_event: Option<WorkCompletedEvent>,
 }
+
+/// 工作阶段完成事件：用于前端弹出“备注填写”并定位到对应记录。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkCompletedEvent {
+    /// 记录日期（YYYY-MM-DD）。
+    pub date: String,
+    /// 当日记录索引（从 0 开始）。
+    pub record_index: usize,
+    /// 写入的记录内容。
+    pub record: HistoryRecord,
+}
+
+/// 向前端广播“工作阶段自然完成”的事件名。
+pub const EVENT_WORK_COMPLETED: &str = "pomodoro://work_completed";
 
 /// 计时器运行态（不持久化；重启后回到默认工作阶段）。
 pub struct TimerRuntime {
@@ -139,6 +199,8 @@ impl TimerRuntime {
 
     /// 基于当前数据生成快照。
     pub fn snapshot(&self, data: &AppData) -> TimerSnapshot {
+        let today_stats = TodayStats::from_app_data(data);
+        let week_stats = WeekStats::from_app_data(data);
         TimerSnapshot {
             phase: self.phase,
             remaining_seconds: self.remaining_seconds,
@@ -146,7 +208,14 @@ impl TimerRuntime {
             current_tag: self.current_tag.clone(),
             blacklist_locked: self.blacklist_locked(),
             settings: data.settings.clone(),
-            today_stats: TodayStats::from_app_data(data),
+            today_stats: today_stats.clone(),
+            week_stats: week_stats.clone(),
+            goal_progress: GoalProgress {
+                daily_goal: data.settings.daily_goal,
+                daily_completed: today_stats.total,
+                weekly_goal: data.settings.weekly_goal,
+                weekly_completed: week_stats.total,
+            },
         }
     }
 
@@ -204,6 +273,7 @@ impl TimerRuntime {
                 history_changed: false,
                 phase_ended: false,
                 work_auto_started: false,
+                work_completed_event: None,
             });
         }
         if self.remaining_seconds > 0 {
@@ -214,21 +284,49 @@ impl TimerRuntime {
                 history_changed: false,
                 phase_ended: false,
                 work_auto_started: false,
+                work_completed_event: None,
             });
         }
 
         let ended_phase = self.phase;
         let mut history_changed = false;
+        let mut work_completed_event: Option<WorkCompletedEvent> = None;
         let mut completed_today_after = TodayStats::from_app_data(data).total;
+        let completed_today_before = completed_today_after;
+        let completed_week_before = WeekStats::from_app_data(data).total;
+        let mut completed_week_after = completed_week_before;
 
         if ended_phase == Phase::Work {
-            self.append_work_record(data)?;
+            let created = self.append_work_record(data)?;
             history_changed = true;
             completed_today_after += 1;
+            completed_week_after += 1;
             self.decrease_auto_work_remaining_after_work_end(&data.settings);
+            work_completed_event = Some(created);
+            tracing::info!(
+                target: "timer",
+                "工作阶段完成：date={} tag={} duration={}m todayCompleted={} weekCompleted={}",
+                self.work_started_date.clone().unwrap_or_else(today_date),
+                self.current_tag,
+                data.settings.pomodoro,
+                completed_today_after,
+                completed_week_after
+            );
+            self.notify_goal_progress_if_needed(
+                app,
+                &data.settings,
+                completed_today_before,
+                completed_today_after,
+                completed_week_before,
+                completed_week_after,
+            )?;
         }
 
-        let next = next_phase(ended_phase, data.settings.long_break_interval, completed_today_after);
+        let next = next_phase(
+            ended_phase,
+            data.settings.long_break_interval,
+            completed_today_after,
+        );
         self.apply_phase(next, &data.settings);
         self.is_running = false;
 
@@ -236,33 +334,45 @@ impl TimerRuntime {
 
         self.notify_phase_end(app, ended_phase, next, next_auto_started, &data.settings)?;
 
+        tracing::info!(
+            target: "timer",
+            "阶段切换：ended={:?} next={:?} nextAutoStarted={}",
+            ended_phase,
+            next,
+            next_auto_started
+        );
+
         Ok(TickResult {
             history_changed,
             phase_ended: true,
             work_auto_started: next == Phase::Work && next_auto_started,
+            work_completed_event,
         })
     }
 
     /// 将当前工作阶段写入 `history`（仅在自然完成时调用）。
-    fn append_work_record(&mut self, data: &mut AppData) -> AppResult<()> {
-        let date = self
-            .work_started_date
-            .clone()
-            .unwrap_or_else(today_date);
-        let start_time = self
-            .work_started_time
-            .clone()
-            .unwrap_or_else(now_hhmm);
+    fn append_work_record(&mut self, data: &mut AppData) -> AppResult<WorkCompletedEvent> {
+        let date = self.work_started_date.clone().unwrap_or_else(today_date);
+        let start_time = self.work_started_time.clone().unwrap_or_else(now_hhmm);
+        let end_time = now_hhmm();
 
         let record = HistoryRecord {
             tag: self.current_tag.clone(),
             start_time,
+            end_time: Some(end_time),
             duration: data.settings.pomodoro,
+            phase: Phase::Work,
+            remark: String::new(),
         };
 
         let day = ensure_day(&mut data.history, &date);
-        day.records.push(record);
-        Ok(())
+        day.records.push(record.clone());
+        let record_index = day.records.len().saturating_sub(1);
+        Ok(WorkCompletedEvent {
+            date,
+            record_index,
+            record,
+        })
     }
 
     /// 应用阶段切换：重置剩余时间与锁定标记。
@@ -327,12 +437,76 @@ impl TimerRuntime {
     ) -> AppResult<()> {
         let preview = phase_preview(next, next_auto_started, settings);
         let (title, body) = match ended {
-            Phase::Work => ("专注完成".to_string(), format!("{}。{}", "本阶段已结束", preview)),
+            Phase::Work => (
+                "专注完成".to_string(),
+                format!("{}。{}", "本阶段已结束", preview),
+            ),
             Phase::ShortBreak => ("短休息结束".to_string(), preview),
             Phase::LongBreak => ("长休息结束".to_string(), preview),
         };
 
-        app.notification().builder().title(title).body(body).show()?;
+        app.notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()?;
+        Ok(())
+    }
+
+    /// 在工作阶段完成后，根据每日/每周目标的阈值触发提醒。
+    fn notify_goal_progress_if_needed(
+        &self,
+        app: &tauri::AppHandle,
+        settings: &Settings,
+        daily_before: u32,
+        daily_after: u32,
+        weekly_before: u32,
+        weekly_after: u32,
+    ) -> AppResult<()> {
+        let daily_goal = settings.daily_goal;
+        if daily_goal > 0 {
+            let half = daily_goal.div_ceil(2);
+            if daily_before < half && daily_after >= half {
+                app.notification()
+                    .builder()
+                    .title("今日目标进度")
+                    .body(format!("已完成今日目标 50%（{daily_after}/{daily_goal}）"))
+                    .show()?;
+            }
+            if daily_before < daily_goal && daily_after >= daily_goal {
+                app.notification()
+                    .builder()
+                    .title("今日目标达成")
+                    .body(format!(
+                        "恭喜！已完成今日目标（{daily_after}/{daily_goal}）"
+                    ))
+                    .show()?;
+            }
+        }
+
+        let weekly_goal = settings.weekly_goal;
+        if weekly_goal > 0 {
+            let half = weekly_goal.div_ceil(2);
+            if weekly_before < half && weekly_after >= half {
+                app.notification()
+                    .builder()
+                    .title("本周目标进度")
+                    .body(format!(
+                        "已完成本周目标 50%（{weekly_after}/{weekly_goal}）"
+                    ))
+                    .show()?;
+            }
+            if weekly_before < weekly_goal && weekly_after >= weekly_goal {
+                app.notification()
+                    .builder()
+                    .title("本周目标达成")
+                    .body(format!(
+                        "恭喜！已完成本周目标（{weekly_after}/{weekly_goal}）"
+                    ))
+                    .show()?;
+            }
+        }
+
         Ok(())
     }
 }
@@ -373,6 +547,28 @@ fn now_hhmm() -> String {
     Local::now().format("%H:%M").to_string()
 }
 
+/// 获取本周日期范围（周一为起始），返回 `(from, to)` 的日期字符串（YYYY-MM-DD）。
+fn current_week_range() -> (String, String) {
+    use chrono::{Datelike as _, Duration as ChronoDuration, Weekday};
+    let today = Local::now().date_naive();
+    let weekday = today.weekday();
+    let offset_days = match weekday {
+        Weekday::Mon => 0,
+        Weekday::Tue => 1,
+        Weekday::Wed => 2,
+        Weekday::Thu => 3,
+        Weekday::Fri => 4,
+        Weekday::Sat => 5,
+        Weekday::Sun => 6,
+    };
+    let from = today - ChronoDuration::days(offset_days);
+    let to = from + ChronoDuration::days(6);
+    (
+        from.format("%Y-%m-%d").to_string(),
+        to.format("%Y-%m-%d").to_string(),
+    )
+}
+
 /// 计算某阶段的总秒数。
 fn phase_seconds(phase: Phase, settings: &Settings) -> u64 {
     match phase {
@@ -386,7 +582,8 @@ fn phase_seconds(phase: Phase, settings: &Settings) -> u64 {
 fn next_phase(current: Phase, long_break_interval: u32, completed_today_after: u32) -> Phase {
     match current {
         Phase::Work => {
-            if long_break_interval > 0 && completed_today_after % long_break_interval == 0 {
+            if long_break_interval > 0 && completed_today_after.is_multiple_of(long_break_interval)
+            {
                 Phase::LongBreak
             } else {
                 Phase::ShortBreak
@@ -396,7 +593,6 @@ fn next_phase(current: Phase, long_break_interval: u32, completed_today_after: u
     }
 }
 
-/// 在历史数组中确保存在指定日期的 `HistoryDay`，并返回可变引用。
 /// 在历史数组中确保存在指定日期的 `HistoryDay`，并返回可变引用。
 fn ensure_day<'a>(history: &'a mut Vec<HistoryDay>, date: &str) -> &'a mut HistoryDay {
     if let Some(index) = history.iter().position(|d| d.date == date) {
@@ -413,7 +609,11 @@ fn ensure_day<'a>(history: &'a mut Vec<HistoryDay>, date: &str) -> &'a mut Histo
 
 /// 生成“下一阶段预告”文案（区分是否已自动开始）。
 fn phase_preview(next: Phase, next_auto_started: bool, settings: &Settings) -> String {
-    let prefix = if next_auto_started { "已自动开始" } else { "即将开始" };
+    let prefix = if next_auto_started {
+        "已自动开始"
+    } else {
+        "即将开始"
+    };
     match next {
         Phase::Work => format!("{prefix}工作 {} 分钟", settings.pomodoro),
         Phase::ShortBreak => format!("{prefix}短休息 {} 分钟", settings.short_break),
@@ -441,6 +641,12 @@ pub fn validate_settings(settings: &Settings) -> AppResult<()> {
         return Err(AppError::Validation(
             "连续番茄数量需在 1-20 个番茄".to_string(),
         ));
+    }
+    if settings.daily_goal > 1000 {
+        return Err(AppError::Validation("每日目标建议不超过 1000".to_string()));
+    }
+    if settings.weekly_goal > 10000 {
+        return Err(AppError::Validation("每周目标建议不超过 10000".to_string()));
     }
     Ok(())
 }
