@@ -1,6 +1,9 @@
 <script lang="ts">
   import "../app.css";
   import { onMount } from "svelte";
+  import { initAppClient, timerSnapshot } from "$lib/appClient";
+  import MiniWindow from "$lib/components/MiniWindow.svelte";
+  import { miniMode } from "$lib/uiState";
 
   /** 将 `prefers-color-scheme` 应用到根节点的 `dark` class。 */
   function applyPreferredTheme(): void {
@@ -29,6 +32,17 @@
   }
 
   onMount(setupThemeSync);
+
+  /** Svelte 生命周期：挂载后初始化全局后端快照与事件监听。 */
+  function onInitApp(): void {
+    void initAppClient();
+  }
+
+  onMount(onInitApp);
 </script>
 
-<slot />
+{#if $miniMode}
+  <MiniWindow timer={$timerSnapshot} />
+{:else}
+  <slot />
+{/if}
