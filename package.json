@@ -1,7 +1,7 @@
 {
-  "name": "tauri-app",
+  "name": "pomodoro-technique",
   "version": "0.1.0",
-  "description": "",
+  "description": "Windows 番茄钟（专注模式自动终止干扰程序）",
   "type": "module",
   "scripts": {
     "dev": "vite dev",

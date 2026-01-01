@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- WiX 本地化文件：用于让 MSI 在中文环境下使用合适的语言与码页，避免非 ASCII 的 productName 导致 light.exe 失败。 -->
+<WixLocalization Culture="zh-CN" Codepage="936" xmlns="http://schemas.microsoft.com/wix/2006/localization">
+  <String Id="TauriLanguage" Overridable="yes">2052</String>
+  <String Id="TauriCodepage" Overridable="yes">936</String>
+
+  <String Id="InstallAppFeature" Overridable="yes">安装应用</String>
+  <String Id="PathEnvVarFeature" Overridable="yes">PATH 环境变量</String>
+  <String Id="LaunchApp" Overridable="yes">启动应用</String>
+  <String Id="DowngradeErrorMessage" Overridable="yes">已安装更高版本的 [ProductName]。</String>
+</WixLocalization>
+
