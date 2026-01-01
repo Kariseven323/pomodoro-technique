@@ -98,6 +98,8 @@ pub struct TickResult {
     pub history_changed: bool,
     /// 是否发生阶段结束切换（用于托盘/通知刷新）。
     pub phase_ended: bool,
+    /// 是否在“休息结束”后自动开始了工作阶段（用于触发黑名单终止逻辑）。
+    pub work_auto_started: bool,
 }
 
 /// 计时器运行态（不持久化；重启后回到默认工作阶段）。
@@ -116,6 +118,8 @@ pub struct TimerRuntime {
     work_started_time: Option<String>,
     /// 专注期黑名单锁定标记：一旦工作阶段开始，就禁止移除黑名单条目。
     work_lock_active: bool,
+    /// 连续番茄“自动推进”剩余工作次数（仅影响：休息结束后是否自动开始工作）。
+    auto_work_remaining: u32,
 }
 
 impl TimerRuntime {
@@ -129,6 +133,7 @@ impl TimerRuntime {
             work_started_date: None,
             work_started_time: None,
             work_lock_active: false,
+            auto_work_remaining: 0,
         }
     }
 
@@ -156,7 +161,7 @@ impl TimerRuntime {
     }
 
     /// 启动计时；若为工作阶段首次开始则记录开始时间并锁定黑名单。
-    pub fn start(&mut self) {
+    pub fn start(&mut self, settings: &Settings) {
         if self.is_running {
             return;
         }
@@ -165,6 +170,7 @@ impl TimerRuntime {
             self.work_lock_active = true;
             self.work_started_date = Some(today_date());
             self.work_started_time = Some(now_hhmm());
+            self.init_auto_work_remaining_if_needed(settings);
         }
     }
 
@@ -181,6 +187,7 @@ impl TimerRuntime {
         self.work_started_date = None;
         self.work_started_time = None;
         self.work_lock_active = false;
+        self.auto_work_remaining = 0;
     }
 
     /// 跳过当前阶段（工作阶段不会写入历史）。
@@ -196,6 +203,7 @@ impl TimerRuntime {
             return Ok(TickResult {
                 history_changed: false,
                 phase_ended: false,
+                work_auto_started: false,
             });
         }
         if self.remaining_seconds > 0 {
@@ -205,6 +213,7 @@ impl TimerRuntime {
             return Ok(TickResult {
                 history_changed: false,
                 phase_ended: false,
+                work_auto_started: false,
             });
         }
 
@@ -216,17 +225,21 @@ impl TimerRuntime {
             self.append_work_record(data)?;
             history_changed = true;
             completed_today_after += 1;
+            self.decrease_auto_work_remaining_after_work_end(&data.settings);
         }
 
         let next = next_phase(ended_phase, data.settings.long_break_interval, completed_today_after);
         self.apply_phase(next, &data.settings);
         self.is_running = false;
 
-        self.notify_phase_end(app, ended_phase, next, &data.settings)?;
+        let next_auto_started = self.start_next_phase_if_needed(next, &data.settings);
+
+        self.notify_phase_end(app, ended_phase, next, next_auto_started, &data.settings)?;
 
         Ok(TickResult {
             history_changed,
             phase_ended: true,
+            work_auto_started: next == Phase::Work && next_auto_started,
         })
     }
 
@@ -261,27 +274,62 @@ impl TimerRuntime {
         self.work_lock_active = false;
     }
 
+    /// 初始化“连续番茄自动推进”的剩余工作次数（仅在工作阶段首次开始时触发）。
+    fn init_auto_work_remaining_if_needed(&mut self, settings: &Settings) {
+        if !settings.auto_continue_enabled {
+            return;
+        }
+        if self.auto_work_remaining > 0 {
+            return;
+        }
+        self.auto_work_remaining = settings.auto_continue_pomodoros;
+    }
+
+    /// 在一个工作阶段自然结束后递减“自动推进”的剩余次数。
+    fn decrease_auto_work_remaining_after_work_end(&mut self, settings: &Settings) {
+        if !settings.auto_continue_enabled {
+            self.auto_work_remaining = 0;
+            return;
+        }
+        if self.auto_work_remaining > 0 {
+            self.auto_work_remaining -= 1;
+        }
+    }
+
+    /// 按规则决定是否自动开始“下一阶段”的倒计时，并返回是否已自动开始。
+    fn start_next_phase_if_needed(&mut self, next: Phase, settings: &Settings) -> bool {
+        match next {
+            Phase::ShortBreak | Phase::LongBreak => {
+                // 工作结束后始终自动进入休息倒计时。
+                self.start(settings);
+                true
+            }
+            Phase::Work => {
+                // 休息结束后：仅在“连续番茄自动推进”开启且仍有剩余时自动开始工作。
+                if settings.auto_continue_enabled && self.auto_work_remaining > 0 {
+                    self.start(settings);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
     /// 发送阶段结束通知，并给出下一阶段预告。
     fn notify_phase_end(
         &self,
         app: &tauri::AppHandle,
         ended: Phase,
         next: Phase,
+        next_auto_started: bool,
         settings: &Settings,
     ) -> AppResult<()> {
+        let preview = phase_preview(next, next_auto_started, settings);
         let (title, body) = match ended {
-            Phase::Work => (
-                "专注完成".to_string(),
-                format!("{}。{}", "本阶段已结束", phase_preview(next, settings)),
-            ),
-            Phase::ShortBreak => (
-                "短休息结束".to_string(),
-                phase_preview(next, settings),
-            ),
-            Phase::LongBreak => (
-                "长休息结束".to_string(),
-                phase_preview(next, settings),
-            ),
+            Phase::Work => ("专注完成".to_string(), format!("{}。{}", "本阶段已结束", preview)),
+            Phase::ShortBreak => ("短休息结束".to_string(), preview),
+            Phase::LongBreak => ("长休息结束".to_string(), preview),
         };
 
         app.notification().builder().title(title).body(body).show()?;
@@ -297,6 +345,15 @@ pub fn spawn_timer_task(app: tauri::AppHandle) {
             let state = app.state::<AppState>();
             let was_running = state.is_running();
             if let Ok(result) = state.tick() {
+                if result.work_auto_started {
+                    let names: Vec<String> = state
+                        .data_snapshot()
+                        .blacklist
+                        .into_iter()
+                        .map(|b| b.name)
+                        .collect();
+                    crate::commands::kill_names_and_emit(&state, &names);
+                }
                 if was_running || result.phase_ended {
                     let _ = state.emit_timer_snapshot();
                     let _ = crate::tray::refresh_tray(&state);
@@ -354,12 +411,13 @@ fn ensure_day<'a>(history: &'a mut Vec<HistoryDay>, date: &str) -> &'a mut Histo
     &mut history[last_index]
 }
 
-/// 生成“下一阶段预告”文案。
-fn phase_preview(next: Phase, settings: &Settings) -> String {
+/// 生成“下一阶段预告”文案（区分是否已自动开始）。
+fn phase_preview(next: Phase, next_auto_started: bool, settings: &Settings) -> String {
+    let prefix = if next_auto_started { "已自动开始" } else { "即将开始" };
     match next {
-        Phase::Work => format!("即将开始工作 {} 分钟", settings.pomodoro),
-        Phase::ShortBreak => format!("即将开始短休息 {} 分钟", settings.short_break),
-        Phase::LongBreak => format!("即将开始长休息 {} 分钟", settings.long_break),
+        Phase::Work => format!("{prefix}工作 {} 分钟", settings.pomodoro),
+        Phase::ShortBreak => format!("{prefix}短休息 {} 分钟", settings.short_break),
+        Phase::LongBreak => format!("{prefix}长休息 {} 分钟", settings.long_break),
     }
 }
 
@@ -377,6 +435,11 @@ pub fn validate_settings(settings: &Settings) -> AppResult<()> {
     if !(1..=10).contains(&settings.long_break_interval) {
         return Err(AppError::Validation(
             "长休息间隔需在 1-10 个番茄".to_string(),
+        ));
+    }
+    if !(1..=20).contains(&settings.auto_continue_pomodoros) {
+        return Err(AppError::Validation(
+            "连续番茄数量需在 1-20 个番茄".to_string(),
         ));
     }
     Ok(())

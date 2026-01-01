@@ -13,6 +13,10 @@ export interface Settings {
   longBreak: number;
   /** 长休息间隔（每 N 个番茄触发）。 */
   longBreakInterval: number;
+  /** 是否启用“休息结束后自动进入工作倒计时”（连续番茄模式）。 */
+  autoContinueEnabled: boolean;
+  /** 连续番茄数量：在该次数内，休息结束后自动开始下一次工作倒计时。 */
+  autoContinuePomodoros: number;
 }
 
 /** 黑名单条目。 */

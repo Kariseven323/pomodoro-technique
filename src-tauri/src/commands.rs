@@ -288,7 +288,7 @@ pub fn timer_start_inner(state: &AppState) -> AppResult<()> {
                 && !timer_runtime.blacklist_locked()
                 && !timer_runtime.is_running;
             let names: Vec<String> = data.blacklist.iter().map(|b| b.name.clone()).collect();
-            timer_runtime.start();
+            timer_runtime.start(&data.settings);
             Ok((names, should_kill))
         },
         false,
@@ -468,7 +468,7 @@ fn normalize_name(name: &str) -> String {
 }
 
 /// 批量终止若干进程名，并将结果通过事件推送到前端。
-fn kill_names_and_emit(state: &AppState, names: &[String]) {
+pub(crate) fn kill_names_and_emit(state: &AppState, names: &[String]) {
     if names.is_empty() {
         return;
     }

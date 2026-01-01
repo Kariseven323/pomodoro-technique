@@ -20,6 +20,17 @@ pub struct Settings {
     pub long_break: u32,
     /// 长休息间隔（每 N 个番茄触发）。
     pub long_break_interval: u32,
+    /// 是否启用“休息结束后自动进入工作倒计时”（连续番茄模式）。
+    #[serde(default)]
+    pub auto_continue_enabled: bool,
+    /// 连续番茄数量：在该次数内，休息结束后自动开始下一次工作倒计时。
+    #[serde(default = "default_auto_continue_pomodoros")]
+    pub auto_continue_pomodoros: u32,
+}
+
+/// 默认连续番茄数量（用于旧版本数据缺失字段时的兼容回填）。
+fn default_auto_continue_pomodoros() -> u32 {
+    4
 }
 
 impl Default for Settings {
@@ -30,6 +41,8 @@ impl Default for Settings {
             short_break: 5,
             long_break: 15,
             long_break_interval: 4,
+            auto_continue_enabled: false,
+            auto_continue_pomodoros: 4,
         }
     }
 }
@@ -91,4 +104,3 @@ impl Default for AppData {
         }
     }
 }
-
