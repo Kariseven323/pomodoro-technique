@@ -1,0 +1,2 @@
+- must use chinese to reply
+- comment must be written for every method and function
