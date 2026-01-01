@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { Settings } from "$lib/types";
+  import type { StorePaths } from "$lib/types";
+  import { getStorePaths, openStoreDir as openStoreDirApi } from "$lib/tauriApi";
   import { createEventDispatcher } from "svelte";
 
   const props = $props<{ open: boolean; settings: Settings }>();
@@ -16,9 +18,46 @@
     longBreakInterval: 4,
   });
 
+  let storePaths = $state<StorePaths | null>(null);
+  let storePathsLoading = $state(false);
+  let storePathsError = $state<string | null>(null);
+  let storePathsNotice = $state<string | null>(null);
+  let wasOpen = $state(false);
+
   /** 将外部传入的 `settings` 同步到本地草稿（用于编辑）。 */
   function syncDraftFromProps(): void {
     draft = { ...props.settings };
+  }
+
+  /** 加载应用配置（store）文件真实存储路径（用于设置页展示）。 */
+  async function loadStorePaths(): Promise<void> {
+    if (storePathsLoading) return;
+    storePathsLoading = true;
+    storePathsError = null;
+    try {
+      storePaths = await getStorePaths();
+    } catch (e) {
+      storePathsError = e instanceof Error ? e.message : String(e);
+      storePaths = null;
+    } finally {
+      storePathsLoading = false;
+    }
+  }
+
+  /** 点击“打开文件夹”时打开当前项目文件存储目录（文件管理器）。 */
+  async function onOpenStoreDirClick(): Promise<void> {
+    storePathsError = null;
+    storePathsNotice = null;
+    if (!storePaths) await loadStorePaths();
+    try {
+      await openStoreDirApi();
+      storePathsNotice = "已请求打开文件夹";
+      window.setTimeout((): void => {
+        storePathsNotice = null;
+      }, 2000);
+    } catch (e) {
+      storePathsError = e instanceof Error ? e.message : String(e);
+    }
   }
 
   /** 关闭弹窗（不保存）。 */
@@ -31,11 +70,17 @@
     dispatch("save", { ...draft });
   }
 
-  /** 响应 `open` 变化：打开时同步草稿。 */
+  /** 响应 `open` 变化：仅在“从关闭到打开”的瞬间同步草稿，避免编辑中被外部刷新覆盖。 */
   function onOpenEffect(): void {
-    if (props.open) {
+    if (props.open && !wasOpen) {
       syncDraftFromProps();
+      void loadStorePaths();
     }
+    if (!props.open && wasOpen) {
+      storePathsError = null;
+      storePathsNotice = null;
+    }
+    wasOpen = props.open;
   }
 
   $effect(onOpenEffect);
@@ -107,6 +152,32 @@
               bind:value={draft.longBreakInterval}
             />
           </label>
+        </div>
+
+        <div class="mt-4 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
+          <div class="mb-1 text-sm text-zinc-700 dark:text-zinc-200">当前项目文件存储路径</div>
+          {#if storePathsNotice}
+            <div class="mb-2 text-xs text-emerald-700 dark:text-emerald-300">{storePathsNotice}</div>
+          {/if}
+          {#if storePathsError}
+            <div class="mb-2 text-xs text-red-600 dark:text-red-300">失败：{storePathsError}</div>
+          {/if}
+          <div class="flex items-center gap-2">
+            <input
+              class="min-w-0 flex-1 rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs text-zinc-900 outline-none dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
+              readonly
+              value={storePaths?.storeDirPath ?? ""}
+              placeholder={storePathsLoading ? "正在获取..." : "未获取到路径"}
+            />
+            <button
+              type="button"
+              class="shrink-0 rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs text-zinc-700 hover:bg-white disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
+              disabled={storePathsLoading}
+              onclick={onOpenStoreDirClick}
+            >
+              打开文件夹
+            </button>
+          </div>
         </div>
 
         <div class="mt-5 flex items-center justify-end gap-2">

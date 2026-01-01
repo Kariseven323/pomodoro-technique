@@ -1,6 +1,8 @@
 //! 前端可调用的 Tauri 命令集合（invoke handler）。
 
 use serde::{Deserialize, Serialize};
+use tauri::Manager as _;
+use tauri_plugin_opener::OpenerExt as _;
 
 use crate::app_data::{BlacklistItem, Settings};
 use crate::errors::{AppError, AppResult};
@@ -33,6 +35,14 @@ pub struct AppSnapshot {
     pub timer: TimerSnapshot,
 }
 
+/// 应用数据（store）文件路径信息（用于设置页展示与“打开文件夹”入口）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorePaths {
+    /// Store 所在目录路径（可用于打开文件夹）。
+    pub store_dir_path: String,
+}
+
 /// 获取应用完整快照（用于前端首屏渲染与恢复）。
 #[tauri::command]
 pub fn get_app_snapshot(state: tauri::State<'_, AppState>) -> Result<AppSnapshot, String> {
@@ -40,6 +50,59 @@ pub fn get_app_snapshot(state: tauri::State<'_, AppState>) -> Result<AppSnapshot
         data: state.data_snapshot(),
         timer: state.timer_snapshot(),
     }))
+}
+
+/// 获取应用持久化 store 的真实存储路径（目录 + 文件路径）。
+#[tauri::command]
+pub fn get_store_paths(app: tauri::AppHandle) -> Result<StorePaths, String> {
+    to_ipc_result(get_store_paths_impl(&app))
+}
+
+/// 打开 store 所在目录（文件管理器）。
+#[tauri::command]
+pub fn open_store_dir(app: tauri::AppHandle) -> Result<(), String> {
+    to_ipc_result(open_store_dir_impl(&app))
+}
+
+/// 获取 store 路径的内部实现（便于统一错误处理）。
+fn get_store_paths_impl(app: &tauri::AppHandle) -> AppResult<StorePaths> {
+    let store_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| AppError::Invariant("无法解析应用数据目录（app_data_dir）".to_string()))?;
+
+    Ok(StorePaths {
+        store_dir_path: store_dir.to_string_lossy().to_string(),
+    })
+}
+
+/// 打开 store 目录的内部实现：确保目录存在后再请求系统打开。
+fn open_store_dir_impl(app: &tauri::AppHandle) -> AppResult<()> {
+    let store_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| AppError::Invariant("无法解析应用数据目录（app_data_dir）".to_string()))?;
+
+    std::fs::create_dir_all(&store_dir)
+        .map_err(|e| AppError::Invariant(format!("创建应用数据目录失败：{e}")))?;
+
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(&store_dir)
+            .spawn()
+            .map_err(|e| AppError::Invariant(format!("打开文件夹失败：{e}")))?;
+        return Ok(());
+    }
+
+    #[cfg(not(windows))]
+    {
+        app.opener()
+            .open_path(store_dir.to_string_lossy().to_string(), None::<&str>)
+            .map_err(|e| AppError::Invariant(format!("打开文件夹失败：{e}")))?;
+    }
+
+    Ok(())
 }
 
 /// 更新设置（带范围校验），并在必要时重置当前阶段的剩余时间。

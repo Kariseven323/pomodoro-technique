@@ -95,6 +95,12 @@ export interface AppSnapshot {
   timer: TimerSnapshot;
 }
 
+/** 应用持久化 store 的真实存储路径（目录 + 文件）。 */
+export interface StorePaths {
+  /** Store 所在目录路径（可用于打开文件夹）。 */
+  storeDirPath: string;
+}
+
 /** 运行进程信息。 */
 export interface ProcessInfo {
   /** 进程名。 */
@@ -128,4 +134,3 @@ export interface KillSummary {
   /** 是否有任何条目需要管理员权限。 */
   requiresAdmin: boolean;
 }
-

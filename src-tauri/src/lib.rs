@@ -44,6 +44,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_app_snapshot,
+            commands::get_store_paths,
+            commands::open_store_dir,
             commands::update_settings,
             commands::set_current_tag,
             commands::add_tag,

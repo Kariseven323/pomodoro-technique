@@ -14,8 +14,14 @@
   let error = $state<string | null>(null);
   let query = $state("");
   let processes = $state<ProcessInfo[]>([]);
+  let lastUpdatedAt = $state<number | null>(null);
   let draft = $state<BlacklistItem[]>([]);
   let originalNames = $state<string[]>([]);
+  let autoRefreshTimerId: number | null = null;
+  let autoRefreshCleanup: (() => void) | null = null;
+
+  /** 正在运行进程列表自动刷新间隔（毫秒）。 */
+  const AUTO_REFRESH_INTERVAL_MS = 2000;
 
   /** 规范化进程名用于比较（忽略大小写与首尾空白）。 */
   function normalizeName(name: string): string {
@@ -39,17 +45,60 @@
     dispatch("close");
   }
 
-  /** 从后端加载进程列表。 */
+  /** 从后端加载进程列表（避免并发请求导致 UI 抖动）。 */
   async function loadProcesses(): Promise<void> {
+    if (loading) return;
     loading = true;
     error = null;
     try {
       processes = await listProcesses();
+      lastUpdatedAt = Date.now();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
     }
+  }
+
+  /** 立即刷新进程列表（用于按钮点击/聚焦回到窗口时）。 */
+  function refreshProcessesNow(): void {
+    void loadProcesses();
+  }
+
+  /** 停止自动刷新并清理事件监听。 */
+  function stopAutoRefresh(): void {
+    if (autoRefreshTimerId !== null) {
+      window.clearInterval(autoRefreshTimerId);
+      autoRefreshTimerId = null;
+    }
+    if (autoRefreshCleanup) {
+      autoRefreshCleanup();
+      autoRefreshCleanup = null;
+    }
+  }
+
+  /** 启动自动刷新：打开弹窗时持续同步“正在运行的进程”，避免页面停留导致列表过期。 */
+  function startAutoRefresh(): void {
+    stopAutoRefresh();
+    autoRefreshTimerId = window.setInterval(refreshProcessesNow, AUTO_REFRESH_INTERVAL_MS);
+
+    /** 窗口重新获得焦点时立即刷新，减少用户“切回应用后仍是旧列表”的感知延迟。 */
+    const onFocus = (): void => {
+      refreshProcessesNow();
+    };
+    /** 页面从后台切回前台时刷新（例如最小化/切换窗口回来）。 */
+    const onVisibilityChange = (): void => {
+      if (!document.hidden) refreshProcessesNow();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    /** 清理本次启动的事件监听（由 `stopAutoRefresh` 调用）。 */
+    autoRefreshCleanup = (): void => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }
 
   /** 判断草稿黑名单是否包含指定进程名。 */
@@ -126,8 +175,10 @@
   function onOpenEffect(): void {
     if (props.open) {
       syncDraftFromProps();
-      void loadProcesses();
+      refreshProcessesNow();
+      startAutoRefresh();
     } else {
+      stopAutoRefresh();
       query = "";
       error = null;
     }
@@ -237,12 +288,27 @@
           <div class="rounded-2xl border border-black/10 bg-white/60 p-4 dark:border-white/10 dark:bg-white/5">
             <div class="mb-2 flex items-center justify-between gap-2">
               <div class="text-sm font-medium text-zinc-900 dark:text-zinc-50">正在运行的进程</div>
-              <input
-                class="w-44 rounded-2xl border border-black/10 bg-white/70 px-3 py-1 text-xs text-zinc-900 outline-none dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
-                placeholder="搜索进程..."
-                bind:value={query}
-              />
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="rounded-xl px-2 py-1 text-xs text-zinc-600 hover:bg-black/5 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10"
+                  disabled={loading}
+                  onclick={refreshProcessesNow}
+                >
+                  刷新
+                </button>
+                <input
+                  class="w-44 rounded-2xl border border-black/10 bg-white/70 px-3 py-1 text-xs text-zinc-900 outline-none dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
+                  placeholder="搜索进程..."
+                  bind:value={query}
+                />
+              </div>
             </div>
+            {#if lastUpdatedAt}
+              <div class="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                最近刷新：{new Date(lastUpdatedAt).toLocaleTimeString()}
+              </div>
+            {/if}
 
             {#if error}
               <div class="rounded-2xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">

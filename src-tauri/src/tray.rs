@@ -44,6 +44,8 @@ pub fn setup_tray(app: &mut tauri::App) -> AppResult<()> {
     let initial_icon = build_tray_icon_rgba(&initial_text, snapshot.phase, snapshot.is_running)?;
     let tray = TrayIconBuilder::new()
         .menu(&menu)
+        // 禁用“左键显示托盘菜单”：避免左键点击时系统菜单闪现（我们仅在左键时显示主窗口）。
+        .show_menu_on_left_click(false)
         .icon(Image::new_owned(initial_icon, 32, 32))
         .tooltip("番茄钟")
         .on_menu_event(|app_handle, event| {
@@ -70,11 +72,19 @@ pub fn setup_tray(app: &mut tauri::App) -> AppResult<()> {
             }
         })
         .on_tray_icon_event(|tray, event| {
-            // 左键点击托盘图标时显示窗口（右键由系统弹出菜单）。
-            if matches!(event, tauri::tray::TrayIconEvent::Click { .. }) {
-                if let Some(window) = tray.app_handle().get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+            // 仅在“左键单击”时显示窗口：避免右键弹出菜单时也触发显示，导致菜单与窗口同时出现。
+            if let tauri::tray::TrayIconEvent::Click {
+                button,
+                button_state,
+                ..
+            } = event
+            {
+                if button == tauri::tray::MouseButton::Left && button_state == tauri::tray::MouseButtonState::Up
+                {
+                    if let Some(window) = tray.app_handle().get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
                 }
             }
         })

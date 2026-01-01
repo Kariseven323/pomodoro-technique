@@ -356,7 +356,7 @@
               value={timer.currentTag}
             >
               {#each data.tags as t (t)}
-                <option value={t}>{t}</option>
+                <option class="bg-white text-zinc-900" value={t}>{t}</option>
               {/each}
             </select>
 

@@ -1,11 +1,21 @@
 /** Tauri 后端命令调用封装（集中处理 invoke、类型与命令名）。 */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSnapshot, BlacklistItem, ProcessInfo, Settings, TimerSnapshot } from "./types";
+import type { AppSnapshot, BlacklistItem, ProcessInfo, Settings, StorePaths, TimerSnapshot } from "./types";
 
 /** 获取应用完整快照（持久化数据 + 计时器状态）。 */
 export async function getAppSnapshot(): Promise<AppSnapshot> {
   return invoke<AppSnapshot>("get_app_snapshot");
+}
+
+/** 获取应用持久化 store 的真实存储路径（目录 + 文件路径）。 */
+export async function getStorePaths(): Promise<StorePaths> {
+  return invoke<StorePaths>("get_store_paths");
+}
+
+/** 打开应用数据目录（用于查看当前项目文件存储路径）。 */
+export async function openStoreDir(): Promise<void> {
+  return invoke<void>("open_store_dir");
 }
 
 /** 更新设置（后端会进行范围校验并持久化）。 */
@@ -57,4 +67,3 @@ export async function timerSkip(): Promise<TimerSnapshot> {
 export async function restartAsAdmin(): Promise<void> {
   return invoke<void>("restart_as_admin");
 }
-
