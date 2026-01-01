@@ -1,7 +1,20 @@
 /** Tauri 后端命令调用封装（集中处理 invoke、类型与命令名）。 */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSnapshot, BlacklistItem, ProcessInfo, Settings, StorePaths, TimerSnapshot } from "./types";
+import type {
+  AppSnapshot,
+  BlacklistItem,
+  BlacklistTemplate,
+  DateRange,
+  ExportRequest,
+  FocusAnalysis,
+  HistoryDay,
+  HistoryRecord,
+  ProcessInfo,
+  Settings,
+  StorePaths,
+  TimerSnapshot,
+} from "./types";
 
 /** 获取应用完整快照（持久化数据 + 计时器状态）。 */
 export async function getAppSnapshot(): Promise<AppSnapshot> {
@@ -23,6 +36,11 @@ export async function updateSettings(settings: Settings): Promise<AppSnapshot> {
   return invoke<AppSnapshot>("update_settings", { settings });
 }
 
+/** 设置每日/每周目标（0 表示不设目标）。 */
+export async function setGoals(daily: number, weekly: number): Promise<Settings> {
+  return invoke<Settings>("set_goals", { daily, weekly });
+}
+
 /** 设置当前番茄的任务标签（若为新标签会自动加入标签历史）。 */
 export async function setCurrentTag(tag: string): Promise<AppSnapshot> {
   return invoke<AppSnapshot>("set_current_tag", { tag });
@@ -36,6 +54,76 @@ export async function addTag(tag: string): Promise<string[]> {
 /** 设置黑名单（专注期内仅允许新增，不允许移除）。 */
 export async function setBlacklist(blacklist: BlacklistItem[]): Promise<BlacklistItem[]> {
   return invoke<BlacklistItem[]>("set_blacklist", { blacklist });
+}
+
+/** 获取指定范围的历史记录（按日分组）。 */
+export async function getHistory(range: DateRange): Promise<HistoryDay[]> {
+  return invoke<HistoryDay[]>("get_history", { range });
+}
+
+/** 设置某条历史记录的备注。 */
+export async function setHistoryRemark(date: string, recordIndex: number, remark: string): Promise<HistoryRecord> {
+  return invoke<HistoryRecord>("set_history_remark", { date, recordIndex, remark });
+}
+
+/** 获取指定范围的专注时段分析数据。 */
+export async function getFocusAnalysis(range: DateRange): Promise<FocusAnalysis> {
+  return invoke<FocusAnalysis>("get_focus_analysis", { range });
+}
+
+/** 获取全部黑名单模板。 */
+export async function getTemplates(): Promise<BlacklistTemplate[]> {
+  return invoke<BlacklistTemplate[]>("get_templates");
+}
+
+/** 保存黑名单模板（新增/更新自定义模板）。 */
+export async function saveTemplate(template: BlacklistTemplate): Promise<BlacklistTemplate> {
+  return invoke<BlacklistTemplate>("save_template", { template });
+}
+
+/** 删除自定义模板（内置模板不可删除）。 */
+export async function deleteTemplate(id: string): Promise<boolean> {
+  return invoke<boolean>("delete_template", { id });
+}
+
+/** 应用/切换模板（支持同时启用多套），返回应用后的黑名单。 */
+export async function applyTemplate(id: string): Promise<BlacklistItem[]> {
+  return invoke<BlacklistItem[]>("apply_template", { id });
+}
+
+/** 设置主窗口置顶状态。 */
+export async function setAlwaysOnTop(enabled: boolean): Promise<boolean> {
+  return invoke<boolean>("set_always_on_top", { enabled });
+}
+
+/** 切换迷你模式（窗口调整为 200x80，仅显示倒计时）。 */
+export async function setMiniMode(enabled: boolean): Promise<boolean> {
+  return invoke<boolean>("set_mini_mode", { enabled });
+}
+
+/** 导出历史记录：弹出保存对话框并写入 CSV/JSON，返回保存路径。 */
+export async function exportHistory(request: ExportRequest): Promise<string> {
+  return invoke<string>("export_history", { request });
+}
+
+/** 打开日志目录（文件管理器）。 */
+export async function openLogDir(): Promise<boolean> {
+  return invoke<boolean>("open_log_dir");
+}
+
+/** 退出应用（用于迷你模式右键菜单）。 */
+export async function exitApp(): Promise<boolean> {
+  return invoke<boolean>("exit_app");
+}
+
+/** 开发者命令：生成测试历史数据（仅开发环境可用）。 */
+export async function debugGenerateHistory(days: number): Promise<number> {
+  return invoke<number>("debug_generate_history", { days });
+}
+
+/** 开发者命令：清空测试历史数据（仅开发环境可用）。 */
+export async function debugClearHistory(): Promise<boolean> {
+  return invoke<boolean>("debug_clear_history");
 }
 
 /** 获取当前运行进程列表（进程名 + 图标）。 */
