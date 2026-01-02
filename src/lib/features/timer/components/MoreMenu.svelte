@@ -193,7 +193,7 @@
 
 <div class="relative">
   <button
-    class="rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-sm shadow-sm hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10 whitespace-nowrap"
+    class="rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-sm whitespace-nowrap shadow-sm hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
     aria-haspopup="menu"
     aria-expanded={open}
     onclick={toggleMenu}
@@ -234,4 +234,3 @@
     </div>
   {/if}
 </div>
-

@@ -94,11 +94,23 @@
           <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">格式</div>
           <div class="flex items-center gap-2">
             <label class="flex items-center gap-2 text-sm">
-              <input class="h-4 w-4" type="radio" name="fmt" checked={format === "csv"} onchange={() => (format = "csv")} />
+              <input
+                class="h-4 w-4"
+                type="radio"
+                name="fmt"
+                checked={format === "csv"}
+                onchange={() => (format = "csv")}
+              />
               CSV
             </label>
             <label class="flex items-center gap-2 text-sm">
-              <input class="h-4 w-4" type="radio" name="fmt" checked={format === "json"} onchange={() => (format = "json")} />
+              <input
+                class="h-4 w-4"
+                type="radio"
+                name="fmt"
+                checked={format === "json"}
+                onchange={() => (format = "json")}
+              />
               JSON
             </label>
           </div>
@@ -108,31 +120,66 @@
           <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">字段</div>
           <div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
             <label class="flex items-center gap-2">
-              <input class="h-4 w-4" type="checkbox" checked={fields.includes("date")} onchange={(e) => toggleField("date", (e.currentTarget as HTMLInputElement).checked)} />
+              <input
+                class="h-4 w-4"
+                type="checkbox"
+                checked={fields.includes("date")}
+                onchange={(e) => toggleField("date", (e.currentTarget as HTMLInputElement).checked)}
+              />
               日期
             </label>
             <label class="flex items-center gap-2">
-              <input class="h-4 w-4" type="checkbox" checked={fields.includes("startTime")} onchange={(e) => toggleField("startTime", (e.currentTarget as HTMLInputElement).checked)} />
+              <input
+                class="h-4 w-4"
+                type="checkbox"
+                checked={fields.includes("startTime")}
+                onchange={(e) => toggleField("startTime", (e.currentTarget as HTMLInputElement).checked)}
+              />
               开始时间
             </label>
             <label class="flex items-center gap-2">
-              <input class="h-4 w-4" type="checkbox" checked={fields.includes("endTime")} onchange={(e) => toggleField("endTime", (e.currentTarget as HTMLInputElement).checked)} />
+              <input
+                class="h-4 w-4"
+                type="checkbox"
+                checked={fields.includes("endTime")}
+                onchange={(e) => toggleField("endTime", (e.currentTarget as HTMLInputElement).checked)}
+              />
               结束时间
             </label>
             <label class="flex items-center gap-2">
-              <input class="h-4 w-4" type="checkbox" checked={fields.includes("duration")} onchange={(e) => toggleField("duration", (e.currentTarget as HTMLInputElement).checked)} />
+              <input
+                class="h-4 w-4"
+                type="checkbox"
+                checked={fields.includes("duration")}
+                onchange={(e) => toggleField("duration", (e.currentTarget as HTMLInputElement).checked)}
+              />
               时长
             </label>
             <label class="flex items-center gap-2">
-              <input class="h-4 w-4" type="checkbox" checked={fields.includes("tag")} onchange={(e) => toggleField("tag", (e.currentTarget as HTMLInputElement).checked)} />
+              <input
+                class="h-4 w-4"
+                type="checkbox"
+                checked={fields.includes("tag")}
+                onchange={(e) => toggleField("tag", (e.currentTarget as HTMLInputElement).checked)}
+              />
               标签
             </label>
             <label class="flex items-center gap-2">
-              <input class="h-4 w-4" type="checkbox" checked={fields.includes("phase")} onchange={(e) => toggleField("phase", (e.currentTarget as HTMLInputElement).checked)} />
+              <input
+                class="h-4 w-4"
+                type="checkbox"
+                checked={fields.includes("phase")}
+                onchange={(e) => toggleField("phase", (e.currentTarget as HTMLInputElement).checked)}
+              />
               阶段
             </label>
             <label class="flex items-center gap-2">
-              <input class="h-4 w-4" type="checkbox" checked={fields.includes("remark")} onchange={(e) => toggleField("remark", (e.currentTarget as HTMLInputElement).checked)} />
+              <input
+                class="h-4 w-4"
+                type="checkbox"
+                checked={fields.includes("remark")}
+                onchange={(e) => toggleField("remark", (e.currentTarget as HTMLInputElement).checked)}
+              />
               备注
             </label>
           </div>

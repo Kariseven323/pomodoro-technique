@@ -1,35 +1,31 @@
 <script lang="ts">
   import SettingsModal from "$lib/features/settings/SettingsModal.svelte";
   import BlacklistModal from "$lib/features/blacklist/BlacklistModal.svelte";
-  import GoalProgress from "$lib/features/timer/GoalProgress.svelte";
   import RemarkModal from "$lib/features/timer/RemarkModal.svelte";
   import MoreMenu from "$lib/features/timer/components/MoreMenu.svelte";
-  import TagPicker from "$lib/features/timer/components/TagPicker.svelte";
+  import TimerCard from "$lib/features/timer/components/TimerCard.svelte";
+  import StatsCard from "$lib/features/timer/components/StatsCard.svelte";
   import { appData, appError, appLoading, killSummary, timerSnapshot, workCompleted } from "$lib/stores/appClient";
   import { miniMode } from "$lib/stores/uiState";
-	  import { isTauri } from "@tauri-apps/api/core";
-	  import {
-	    restartAsAdmin,
-	    setAlwaysOnTop,
-	    setBlacklist,
-	    setCurrentTag,
-    setHistoryRemark,
-    setMiniMode,
-    timerPause,
-    timerReset,
-    timerSkip,
-    timerStart,
-    updateSettings,
-  } from "$lib/api/tauri";
-  import type { AppData, Settings, TimerSnapshot, WorkCompletedEvent } from "$lib/shared/types";
-  import { phaseAccentClass, phaseLabel } from "$lib/utils/phase";
-  import { formatMmSs } from "$lib/utils/time";
+  import { isTauri } from "@tauri-apps/api/core";
+  import { restartAsAdmin, setHistoryRemark, setMiniMode } from "$lib/api/tauri";
+  import type { AppData, Settings, WorkCompletedEvent } from "$lib/shared/types";
+  import { useBlacklist } from "$lib/composables/useBlacklist";
+  import { useSettings } from "$lib/composables/useSettings";
+  import { useTags } from "$lib/composables/useTags";
+  import { useTimer } from "$lib/composables/useTimer";
+  import { useToast } from "$lib/composables/useToast";
 
   let settingsOpen = $state(false);
   let blacklistOpen = $state(false);
   let remarkOpen = $state(false);
   let remarkEvent = $state<WorkCompletedEvent | null>(null);
-  let toast = $state<string | null>(null);
+  const { toast: toastMessage, showToast } = useToast();
+
+  const timer = useTimer({ showToast });
+  const settings = useSettings({ showToast });
+  const tags = useTags({ showToast });
+  const blacklist = useBlacklist({ showToast });
 
   /** 在快照尚未加载时，为设置弹窗提供一个可用的默认值。 */
   const fallbackSettings: Settings = {
@@ -44,17 +40,6 @@
     alwaysOnTop: false,
   };
 
-  /** 展示一条短提示，并在一段时间后自动隐藏。 */
-  function showToast(message: string): void {
-    toast = message;
-    window.setTimeout(clearToast, 2200);
-  }
-
-  /** 清理 toast。 */
-  function clearToast(): void {
-    toast = null;
-  }
-
   /** 判断当前是否运行在 Tauri 宿主环境（非纯浏览器 dev server）。 */
   function isTauriRuntime(): boolean {
     try {
@@ -64,64 +49,18 @@
     }
   }
 
-  /** 切换开始/暂停。 */
-  async function toggleStartPause(): Promise<void> {
-    if (!$timerSnapshot) return;
-    try {
-      await ($timerSnapshot.isRunning ? timerPause() : timerStart());
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  /** 重置计时器。 */
-  async function resetTimer(): Promise<void> {
-    try {
-      await timerReset();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  /** 跳过当前阶段。 */
-  async function skipTimer(): Promise<void> {
-    try {
-      await timerSkip();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e));
-    }
-  }
-
   /** 打开设置弹窗。 */
-  function openSettings(): void {
+  function handleOpenSettings(): void {
     settingsOpen = true;
   }
 
   /** 关闭设置弹窗。 */
-  function closeSettings(): void {
+  function handleCloseSettings(): void {
     settingsOpen = false;
   }
 
-  /** 保存设置并关闭弹窗。 */
-  async function saveSettings(next: Settings): Promise<void> {
-    if (!$appData) return;
-    const prevAlwaysOnTop = $appData.settings.alwaysOnTop;
-    try {
-      const snapshot = await updateSettings(next);
-      appData.set(snapshot.data);
-      timerSnapshot.set(snapshot.timer);
-      if (next.alwaysOnTop !== prevAlwaysOnTop) {
-        await setAlwaysOnTop(next.alwaysOnTop);
-      }
-      closeSettings();
-      showToast("已保存设置");
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e));
-    }
-  }
-
   /** 打开黑名单弹窗。 */
-  function openBlacklist(): void {
+  function handleOpenBlacklist(): void {
     if (!isTauriRuntime()) {
       showToast("“管理黑名单”仅桌面端可用，请使用 `bun run tauri dev` 启动。");
       return;
@@ -130,52 +69,12 @@
   }
 
   /** 关闭黑名单弹窗。 */
-  function closeBlacklist(): void {
+  function handleCloseBlacklist(): void {
     blacklistOpen = false;
   }
 
-  /** 保存黑名单并关闭弹窗。 */
-  async function saveBlacklist(next: AppData["blacklist"]): Promise<void> {
-    if (!$appData) return;
-    try {
-      const saved = await setBlacklist(next);
-      appData.set({ ...$appData, blacklist: saved });
-      closeBlacklist();
-      showToast("黑名单已更新");
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  /** 选择现有标签。 */
-  async function onTagSelectChange(tag: string): Promise<void> {
-    if (!$appData) return;
-    if (!tag) return;
-    try {
-      const snapshot = await setCurrentTag(tag);
-      appData.set(snapshot.data);
-      timerSnapshot.set(snapshot.timer);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  /** 新建并选择标签。 */
-  async function addAndSelectTag(tag: string): Promise<void> {
-    const nextTag = tag.trim();
-    if (!nextTag) return;
-    try {
-      const snapshot = await setCurrentTag(nextTag);
-      appData.set(snapshot.data);
-      timerSnapshot.set(snapshot.timer);
-      showToast("已添加标签");
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e));
-    }
-  }
-
   /** 请求以管理员身份重启（用于终止需要提权的进程）。 */
-  async function onRestartAsAdmin(): Promise<void> {
+  async function handleRestartAsAdmin(): Promise<void> {
     try {
       await restartAsAdmin();
     } catch (e) {
@@ -183,21 +82,8 @@
     }
   }
 
-  /** 切换窗口置顶状态。 */
-  async function toggleAlwaysOnTop(): Promise<void> {
-    if (!$appData) return;
-    const next = !$appData.settings.alwaysOnTop;
-    try {
-      await setAlwaysOnTop(next);
-      appData.set({ ...$appData, settings: { ...$appData.settings, alwaysOnTop: next } });
-      showToast(next ? "已置顶" : "已取消置顶");
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  /** 切换迷你模式。 */
-  async function toggleMiniMode(): Promise<void> {
+  /** 切换迷你模式（用于右上角菜单与托盘入口）。 */
+  async function handleToggleMiniMode(): Promise<void> {
     const next = !$miniMode;
     try {
       await setMiniMode(next);
@@ -251,176 +137,143 @@
   $effect(onKillSummaryEffect);
 
   /** 处理设置弹窗的保存事件。 */
-  function onSettingsSave(e: CustomEvent<Settings>): void {
-    void saveSettings(e.detail);
+  async function handleSettingsSave(e: CustomEvent<Settings>): Promise<void> {
+    const ok = await settings.saveSettings(e.detail);
+    if (ok) handleCloseSettings();
   }
 
   /** 处理黑名单弹窗的保存事件。 */
-  function onBlacklistSave(e: CustomEvent<AppData["blacklist"]>): void {
-    void saveBlacklist(e.detail);
+  async function handleBlacklistSave(e: CustomEvent<AppData["blacklist"]>): Promise<void> {
+    const ok = await blacklist.saveBlacklist(e.detail);
+    if (ok) handleCloseBlacklist();
   }
 
   /** 处理模板变更：同步更新 `AppData`（模板列表/启用状态/黑名单）。 */
-  function onTemplatesChange(
-    e: CustomEvent<{ templates: AppData["blacklistTemplates"]; activeTemplateIds: string[]; blacklist: AppData["blacklist"] }>,
+  function handleTemplatesChange(
+    e: CustomEvent<{
+      templates: AppData["blacklistTemplates"];
+      activeTemplateIds: string[];
+      blacklist: AppData["blacklist"];
+    }>,
   ): void {
-    if (!$appData) return;
-    const activeTemplateId = e.detail.activeTemplateIds[0] ?? null;
-    appData.set({
-      ...$appData,
-      blacklistTemplates: e.detail.templates,
-      activeTemplateIds: e.detail.activeTemplateIds,
-      activeTemplateId,
-      blacklist: e.detail.blacklist,
-    });
+    blacklist.applyTemplatesChange(e.detail);
   }
 
   /** 处理备注弹窗保存事件。 */
-  function onRemarkSave(e: CustomEvent<string>): void {
+  function handleRemarkSave(e: CustomEvent<string>): void {
     void saveRemark(e.detail);
+  }
+
+  /** 转发“开始/暂停”点击到计时器组合式逻辑。 */
+  function handleToggleStartPause(): void {
+    void timer.toggleStartPause();
+  }
+
+  /** 转发“重置”点击到计时器组合式逻辑。 */
+  function handleResetTimer(): void {
+    void timer.resetTimer();
+  }
+
+  /** 转发“跳过”点击到计时器组合式逻辑。 */
+  function handleSkipTimer(): void {
+    void timer.skipTimer();
+  }
+
+  /** 转发“切换置顶”点击到设置组合式逻辑。 */
+  function handleToggleAlwaysOnTop(): void {
+    void settings.toggleAlwaysOnTop();
+  }
+
+  /** 转发“标签选择”到标签组合式逻辑。 */
+  function handleTagSelect(tag: string): void {
+    void tags.onTagSelectChange(tag);
+  }
+
+  /** 转发“标签创建”到标签组合式逻辑。 */
+  function handleTagCreate(tag: string): void {
+    void tags.addAndSelectTag(tag);
   }
 </script>
 
-<main class="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 px-4 py-6 text-zinc-900 dark:from-zinc-950 dark:to-zinc-900 dark:text-zinc-50">
-    <div class="mx-auto w-full max-w-4xl">
-      <header class="mb-5 flex items-center justify-between gap-3">
-        <div>
-          <h1 class="text-lg font-semibold tracking-tight">番茄钟</h1>
-          <p class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">专注模式下自动终止干扰程序</p>
-        </div>
-	        <div class="flex items-center gap-2 whitespace-nowrap">
-	          <a
-	            class="rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-sm shadow-sm hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10 whitespace-nowrap"
-	            href="/history"
-	          >
-	            历史记录
-	          </a>
-	          <MoreMenu
-	            alwaysOnTop={$appData?.settings.alwaysOnTop ?? false}
-	            miniMode={$miniMode}
-	            onOpenBlacklist={openBlacklist}
-	            onOpenSettings={openSettings}
-	            onToggleAlwaysOnTop={() => void toggleAlwaysOnTop()}
-	            onToggleMiniMode={() => void toggleMiniMode()}
-	          />
-	        </div>
-	      </header>
+<main
+  class="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 px-4 py-6 text-zinc-900 dark:from-zinc-950 dark:to-zinc-900 dark:text-zinc-50"
+>
+  <div class="mx-auto w-full max-w-4xl">
+    <header class="mb-5 flex items-center justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-semibold tracking-tight">番茄钟</h1>
+        <p class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">专注模式下自动终止干扰程序</p>
+      </div>
+      <div class="flex items-center gap-2 whitespace-nowrap">
+        <a
+          class="rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-sm whitespace-nowrap shadow-sm hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+          href="/history"
+        >
+          历史记录
+        </a>
+        <MoreMenu
+          alwaysOnTop={$appData?.settings.alwaysOnTop ?? false}
+          miniMode={$miniMode}
+          onOpenBlacklist={handleOpenBlacklist}
+          onOpenSettings={handleOpenSettings}
+          onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+          onToggleMiniMode={handleToggleMiniMode}
+        />
+      </div>
+    </header>
 
-      {#if toast}
-        <div class="mb-4 rounded-2xl bg-black/5 p-3 text-sm text-zinc-700 dark:bg-white/10 dark:text-zinc-200">
-          {toast}
-        </div>
-      {/if}
+    {#if $toastMessage}
+      <div class="mb-4 rounded-2xl bg-black/5 p-3 text-sm text-zinc-700 dark:bg-white/10 dark:text-zinc-200">
+        {$toastMessage}
+      </div>
+    {/if}
 
-      {#if $appError}
-        <div class="rounded-3xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-600 dark:text-red-300">
-          加载失败：{$appError}
-        </div>
-      {:else if $appLoading}
-        <div class="rounded-3xl border border-white/20 bg-white/70 p-4 text-sm text-zinc-600 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300">
-          正在加载...
-        </div>
-      {:else if $appData && $timerSnapshot}
-        <section class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div class="rounded-3xl border border-white/20 bg-white/70 p-5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60">
-            <div class="flex items-start justify-between">
-              <div>
-                <div class="text-sm text-zinc-600 dark:text-zinc-300">当前阶段</div>
-                <div class={"mt-1 text-2xl font-semibold " + phaseAccentClass($timerSnapshot.phase)}>
-                  {phaseLabel($timerSnapshot.phase)}
-                </div>
-              </div>
-              <div class="text-right">
-                <div class="text-sm text-zinc-600 dark:text-zinc-300">今日完成</div>
-                <div class="mt-1 text-xl font-semibold">{$timerSnapshot.todayStats.total}</div>
-              </div>
-            </div>
+    {#if $appError}
+      <div class="rounded-3xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-600 dark:text-red-300">
+        加载失败：{$appError}
+      </div>
+    {:else if $appLoading}
+      <div
+        class="rounded-3xl border border-white/20 bg-white/70 p-4 text-sm text-zinc-600 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300"
+      >
+        正在加载...
+      </div>
+    {:else if $appData && $timerSnapshot}
+      <section class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <TimerCard
+          snapshot={$timerSnapshot}
+          requiresAdmin={$killSummary?.requiresAdmin ?? false}
+          onToggleStartPause={handleToggleStartPause}
+          onReset={handleResetTimer}
+          onSkip={handleSkipTimer}
+          onRestartAsAdmin={handleRestartAsAdmin}
+        />
 
-            <div class="mt-6 rounded-3xl bg-black/5 p-5 text-center dark:bg-white/10">
-              <div class="text-5xl font-bold tabular-nums">{formatMmSs($timerSnapshot.remainingSeconds)}</div>
-              <div class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-                {$timerSnapshot.isRunning ? "计时中..." : "已暂停"}
-              </div>
-            </div>
+        <StatsCard
+          snapshot={$timerSnapshot}
+          tags={$appData.tags}
+          onSelectTag={handleTagSelect}
+          onCreateTag={handleTagCreate}
+        />
+      </section>
+    {/if}
+  </div>
+</main>
 
-            <div class="mt-5 grid grid-cols-3 gap-2">
-              <button
-                class="rounded-2xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white shadow hover:bg-zinc-800 disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
-                onclick={toggleStartPause}
-              >
-                {$timerSnapshot.isRunning ? "暂停" : "开始"}
-              </button>
-              <button
-                class="rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-800 hover:bg-white disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
-                onclick={resetTimer}
-              >
-                重置
-              </button>
-              <button
-                class="rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-800 hover:bg-white disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
-                onclick={skipTimer}
-              >
-                跳过
-              </button>
-            </div>
-
-            {#if $killSummary?.requiresAdmin}
-              <div class="mt-4 rounded-2xl bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-                检测到部分进程需要管理员权限才能终止。
-                <button class="ml-2 underline" onclick={onRestartAsAdmin}>以管理员身份重启</button>
-              </div>
-            {/if}
-          </div>
-
-          <div class="rounded-3xl border border-white/20 bg-white/70 p-5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60">
-            <div class="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-50">目标进度</div>
-            <GoalProgress progress={$timerSnapshot.goalProgress} />
-
-	            <div class="mt-6">
-	              <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">任务标签</div>
-	              <TagPicker
-	                tags={$appData.tags}
-	                currentTag={$timerSnapshot.currentTag}
-	                disabled={false}
-	                on:select={(e) => void onTagSelectChange(e.detail)}
-	                on:create={(e) => void addAndSelectTag(e.detail)}
-	              />
-	            </div>
-
-            <div class="mt-6">
-              <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">今日统计（按标签）</div>
-              {#if $timerSnapshot.todayStats.byTag.length === 0}
-                <div class="text-sm text-zinc-500 dark:text-zinc-400">今天还没有完成记录</div>
-              {:else}
-                <div class="space-y-2">
-                  {#each $timerSnapshot.todayStats.byTag as item (item.tag)}
-                    <div class="flex items-center justify-between rounded-2xl bg-black/5 px-3 py-2 text-sm dark:bg-white/10">
-                      <div class="truncate">{item.tag}</div>
-                      <div class="tabular-nums">{item.count}</div>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-
-            <div class="mt-6 text-xs text-zinc-600 dark:text-zinc-300">
-              黑名单状态：{$timerSnapshot.blacklistLocked ? "专注期锁定（仅可新增）" : "可编辑"}
-            </div>
-          </div>
-        </section>
-      {/if}
-    </div>
-  </main>
-
-<SettingsModal open={settingsOpen} settings={$appData?.settings ?? fallbackSettings} on:close={closeSettings} on:save={onSettingsSave} />
+<SettingsModal
+  open={settingsOpen}
+  settings={$appData?.settings ?? fallbackSettings}
+  on:close={handleCloseSettings}
+  on:save={handleSettingsSave}
+/>
 <BlacklistModal
   open={blacklistOpen}
   blacklist={$appData?.blacklist ?? []}
   locked={$timerSnapshot?.blacklistLocked ?? false}
   templates={$appData?.blacklistTemplates ?? []}
   activeTemplateIds={$appData?.activeTemplateIds ?? []}
-  on:close={closeBlacklist}
-  on:save={onBlacklistSave}
-  on:templatesChange={onTemplatesChange}
+  on:close={handleCloseBlacklist}
+  on:save={handleBlacklistSave}
+  on:templatesChange={handleTemplatesChange}
 />
-<RemarkModal open={remarkOpen} event={remarkEvent} on:close={closeRemarkModal} on:save={onRemarkSave} />
+<RemarkModal open={remarkOpen} event={remarkEvent} on:close={closeRemarkModal} on:save={handleRemarkSave} />

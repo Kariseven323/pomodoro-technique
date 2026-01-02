@@ -17,6 +17,7 @@ pub fn set_current_tag(
 
 /// 设置当前标签的内部实现（便于统一错误处理）。
 fn set_current_tag_impl(state: &AppState, tag: String) -> AppResult<AppSnapshot> {
+    let clock = crate::timer::SystemClock;
     let tag = tag.trim().to_string();
     if tag.is_empty() {
         return Err(AppError::Validation("标签不能为空".to_string()));
@@ -24,7 +25,7 @@ fn set_current_tag_impl(state: &AppState, tag: String) -> AppResult<AppSnapshot>
 
     state.update_data_and_timer(
         |data, timer_runtime| {
-            timer_runtime.set_current_tag(tag.clone());
+            timer_runtime.set_current_tag(tag.clone(), &clock);
             if !data.tags.iter().any(|t| t == &tag) {
                 data.tags.push(tag);
             }

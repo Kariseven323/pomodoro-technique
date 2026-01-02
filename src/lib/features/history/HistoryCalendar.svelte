@@ -61,11 +61,9 @@
       {#each week as date (date)}
         <button
           type="button"
-          class={
-            "h-4 w-4 rounded " +
+          class={"h-4 w-4 rounded " +
             cellClass(props.counts[date] ?? 0) +
-            (props.selectedDate === date ? " ring-2 ring-zinc-900 dark:ring-white" : "")
-          }
+            (props.selectedDate === date ? " ring-2 ring-zinc-900 dark:ring-white" : "")}
           title={`${date}：${props.counts[date] ?? 0} 个`}
           onclick={() => onPick(date)}
         ></button>

@@ -8,4 +8,3 @@ export function formatMmSs(seconds: number): string {
   const secs = seconds % 60;
   return `${String(Math.min(minutes, 99)).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
-

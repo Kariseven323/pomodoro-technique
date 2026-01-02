@@ -93,7 +93,7 @@
                   style={`width:${max(props.analysis.periodCounts) ? Math.round((v / max(props.analysis.periodCounts)) * 100) : 0}%`}
                 ></div>
               </div>
-              <div class="w-8 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{v}</div>
+              <div class="w-8 text-right text-xs text-zinc-600 tabular-nums dark:text-zinc-300">{v}</div>
             </div>
           {/each}
         </div>
@@ -113,7 +113,7 @@
                   style={`width:${max(props.analysis.weekdayCounts) ? Math.round((v / max(props.analysis.weekdayCounts)) * 100) : 0}%`}
                 ></div>
               </div>
-              <div class="w-8 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{v}</div>
+              <div class="w-8 text-right text-xs text-zinc-600 tabular-nums dark:text-zinc-300">{v}</div>
             </div>
           {/each}
         </div>
@@ -128,8 +128,8 @@
             {#each props.analysis.tagEfficiency as t (t.tag)}
               <div class="flex items-center justify-between rounded-2xl bg-black/5 px-3 py-2 text-sm dark:bg-white/10">
                 <div class="min-w-0 flex-1 truncate">{t.tag}</div>
-                <div class="ml-2 tabular-nums text-zinc-700 dark:text-zinc-200">{t.avgDuration.toFixed(1)}</div>
-                <div class="ml-2 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">({t.count})</div>
+                <div class="ml-2 text-zinc-700 tabular-nums dark:text-zinc-200">{t.avgDuration.toFixed(1)}</div>
+                <div class="ml-2 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">({t.count})</div>
               </div>
             {/each}
           </div>
@@ -142,9 +142,14 @@
       <div class="overflow-auto">
         <div class="grid grid-cols-[28px_repeat(24,10px)] gap-1">
           {#each Array.from({ length: 7 }) as _, wi}
-            <div class="flex items-center justify-center text-[10px] text-zinc-500 dark:text-zinc-400">周{weekdayLabel(wi)}</div>
+            <div class="flex items-center justify-center text-[10px] text-zinc-500 dark:text-zinc-400">
+              周{weekdayLabel(wi)}
+            </div>
             {#each props.analysis.weekdayHourCounts[wi] ?? Array.from({ length: 24 }).map(() => 0) as v, hi (hi)}
-              <div class={"h-3 w-3 rounded " + heatClass(v, heatMax)} title={`周${weekdayLabel(wi)} ${hi}点：${v}`}></div>
+              <div
+                class={"h-3 w-3 rounded " + heatClass(v, heatMax)}
+                title={`周${weekdayLabel(wi)} ${hi}点：${v}`}
+              ></div>
             {/each}
           {/each}
         </div>

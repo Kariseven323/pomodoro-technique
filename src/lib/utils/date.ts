@@ -58,6 +58,5 @@ export function startOfMonthYmd(ym: string): string {
  */
 export function endOfMonthYmd(ym: string): string {
   const [y, m] = ym.split("-").map((x) => Number(x));
-  return formatYmd(new Date(y, (m ?? 1), 0));
+  return formatYmd(new Date(y, m ?? 1, 0));
 }
-

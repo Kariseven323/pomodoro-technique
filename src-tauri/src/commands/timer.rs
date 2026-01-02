@@ -3,7 +3,7 @@
 use crate::app_data::Phase;
 use crate::errors::AppResult;
 use crate::state::AppState;
-use crate::timer::{TimerSnapshot, TodayStats};
+use crate::timer::{compute_today_stats, TimerClock, TimerSnapshot};
 
 use super::common::to_ipc_result;
 
@@ -15,13 +15,14 @@ pub fn timer_start(state: tauri::State<'_, AppState>) -> Result<TimerSnapshot, S
 
 /// 托盘复用：开始计时的内部实现（不暴露给前端）。
 pub fn timer_start_inner(state: &AppState) -> AppResult<()> {
+    let clock = crate::timer::SystemClock;
     let (names_to_kill, should_kill) = state.update_data_and_timer(
         |data, timer_runtime| {
             let should_kill = timer_runtime.phase == Phase::Work
                 && !timer_runtime.blacklist_locked()
                 && !timer_runtime.is_running;
             let names: Vec<String> = data.blacklist.iter().map(|b| b.name.clone()).collect();
-            timer_runtime.start(&data.settings);
+            timer_runtime.start(&data.settings, &clock);
             Ok((names, should_kill))
         },
         false,
@@ -113,9 +114,11 @@ pub fn timer_skip(state: tauri::State<'_, AppState>) -> Result<TimerSnapshot, St
 
 /// 跳过阶段的内部实现（便于统一错误处理）。
 fn timer_skip_impl(state: &AppState) -> AppResult<TimerSnapshot> {
+    let clock = crate::timer::SystemClock;
     state.update_data_and_timer(
         |data, timer_runtime| {
-            let completed_today = TodayStats::from_app_data(data).total;
+            let today = clock.today_date();
+            let completed_today = compute_today_stats(data, &today).total;
             timer_runtime.skip(&data.settings, completed_today);
             Ok(())
         },

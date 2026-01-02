@@ -4,13 +4,15 @@ use std::collections::BTreeMap;
 
 use chrono::{Datelike as _, NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::app_data::{DateRange, HistoryDay};
 use crate::errors::{AppError, AppResult};
 
 /// 专注分析结果（用于前端图表渲染）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct FocusAnalysis {
     /// 24 小时分布（按 `startTime` 的小时计数）。
     pub hourly_counts: Vec<u32>,
@@ -27,8 +29,9 @@ pub struct FocusAnalysis {
 }
 
 /// 标签效率条目。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct TagEfficiency {
     /// 标签名。
     pub tag: String,

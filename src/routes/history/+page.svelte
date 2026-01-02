@@ -7,7 +7,15 @@
   import HistoryCalendar from "$lib/features/history/HistoryCalendar.svelte";
   import { exportHistory, getFocusAnalysis, getHistory, setHistoryRemark, setMiniMode } from "$lib/api/tauri";
   import { miniMode } from "$lib/stores/uiState";
-  import type { DateRange, ExportField, ExportFormat, ExportRequest, FocusAnalysis, HistoryDay, HistoryRecord } from "$lib/shared/types";
+  import type {
+    DateRange,
+    ExportField,
+    ExportFormat,
+    ExportRequest,
+    FocusAnalysis,
+    HistoryDay,
+    HistoryRecord,
+  } from "$lib/shared/types";
   import { addDays, endOfMonthYmd, startOfMonthYmd, startOfWeekYmd, todayYmd } from "$lib/utils/date";
 
   type ViewMode = "day" | "week" | "month";
@@ -172,7 +180,9 @@
   }
 
   /** 导出历史（后端弹出保存对话框）。 */
-  async function onExportSubmit(e: CustomEvent<{ format: ExportFormat; fields: ExportField[]; range: DateRange }>): Promise<void> {
+  async function onExportSubmit(
+    e: CustomEvent<{ format: ExportFormat; fields: ExportField[]; range: DateRange }>,
+  ): Promise<void> {
     exportError = null;
     lastExportPath = null;
     try {
@@ -255,7 +265,9 @@
   $effect(onHistoryDevChangedEffect);
 </script>
 
-<main class="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 px-4 py-6 text-zinc-900 dark:from-zinc-950 dark:to-zinc-900 dark:text-zinc-50">
+<main
+  class="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 px-4 py-6 text-zinc-900 dark:from-zinc-950 dark:to-zinc-900 dark:text-zinc-50"
+>
   <div class="mx-auto w-full max-w-5xl">
     <header class="mb-5 flex items-center justify-between gap-3">
       <div>
@@ -287,13 +299,17 @@
     </header>
 
     {#if dev && ($appData?.historyDev?.length ?? 0) > 0}
-      <div class="mb-4 rounded-3xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
+      <div
+        class="mb-4 rounded-3xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300"
+      >
         当前正在展示测试历史数据（`history_dev`）。清除测试数据后将恢复展示正式历史数据。
       </div>
     {/if}
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div class="rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60 lg:col-span-1">
+      <div
+        class="rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl lg:col-span-1 dark:border-white/10 dark:bg-zinc-900/60"
+      >
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="text-sm font-medium text-zinc-900 dark:text-zinc-50">视图</div>
           <div class="flex items-center gap-2">
@@ -342,7 +358,7 @@
 
         <div class="mt-4">
           <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">日历热力图</div>
-          <HistoryCalendar counts={buildCounts(days)} selectedDate={selectedDate} on:select={onSelectDate} />
+          <HistoryCalendar counts={buildCounts(days)} {selectedDate} on:select={onSelectDate} />
         </div>
 
         <div class="mt-4">
@@ -352,7 +368,9 @@
           {:else}
             <div class="max-h-40 space-y-2 overflow-auto pr-1">
               {#each tagStats(days) as item (item.tag)}
-                <div class="flex items-center justify-between rounded-2xl bg-black/5 px-3 py-2 text-sm dark:bg-white/10">
+                <div
+                  class="flex items-center justify-between rounded-2xl bg-black/5 px-3 py-2 text-sm dark:bg-white/10"
+                >
                   <div class="truncate">{item.tag}</div>
                   <div class="tabular-nums">{item.count}</div>
                 </div>
@@ -366,7 +384,9 @@
         </div>
 
         {#if exportError}
-          <div class="mt-3 rounded-2xl bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-300">导出失败：{exportError}</div>
+          <div class="mt-3 rounded-2xl bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-300">
+            导出失败：{exportError}
+          </div>
         {/if}
         {#if lastExportPath}
           <div class="mt-3 rounded-2xl bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300">
@@ -375,7 +395,9 @@
         {/if}
       </div>
 
-      <div class="rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60 lg:col-span-2">
+      <div
+        class="rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl lg:col-span-2 dark:border-white/10 dark:bg-zinc-900/60"
+      >
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="text-sm font-medium text-zinc-900 dark:text-zinc-50">记录列表</div>
           <div class="text-xs text-zinc-600 dark:text-zinc-300">
@@ -387,7 +409,9 @@
           {#if loading}
             <div class="text-sm text-zinc-500 dark:text-zinc-400">正在加载历史...</div>
           {:else if historyError}
-            <div class="rounded-2xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">加载失败：{historyError}</div>
+            <div class="rounded-2xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">
+              加载失败：{historyError}
+            </div>
           {:else if days.length === 0}
             <div class="text-sm text-zinc-500 dark:text-zinc-400">暂无历史记录</div>
           {:else}
@@ -425,7 +449,8 @@
                           />
                           <button
                             class="shrink-0 rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs text-zinc-700 hover:bg-white disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
-                            disabled={remarkSavingKey === remarkKey(d.date, i) || remarkValue(d.date, i, r.remark).trim() === r.remark}
+                            disabled={remarkSavingKey === remarkKey(d.date, i) ||
+                              remarkValue(d.date, i, r.remark).trim() === r.remark}
                             onclick={() => void saveRemark(d.date, i)}
                           >
                             {remarkSavingKey === remarkKey(d.date, i) ? "保存中" : "保存"}
@@ -448,9 +473,11 @@
       </div>
     </div>
 
-    <div class="mt-4 rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60">
+    <div
+      class="mt-4 rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60"
+    >
       <div class="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-50">专注时段分析</div>
-      <FocusAnalysisView analysis={analysis} loading={analysisLoading} error={analysisError} />
+      <FocusAnalysisView {analysis} loading={analysisLoading} error={analysisError} />
     </div>
   </div>
 </main>

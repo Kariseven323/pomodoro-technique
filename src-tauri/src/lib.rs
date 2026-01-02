@@ -10,6 +10,7 @@ mod processes;
 mod state;
 mod timer;
 mod tray;
+pub mod typegen;
 
 use std::time::Duration;
 

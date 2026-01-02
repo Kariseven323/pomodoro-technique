@@ -59,7 +59,9 @@
   </div>
 
   {#if props.lastUpdatedAt}
-    <div class="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">最近刷新：{new Date(props.lastUpdatedAt).toLocaleTimeString()}</div>
+    <div class="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+      最近刷新：{new Date(props.lastUpdatedAt).toLocaleTimeString()}
+    </div>
   {/if}
 
   {#if props.error}
@@ -83,11 +85,13 @@
           {/if}
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm text-zinc-900 dark:text-zinc-50">{p.name}</div>
-            <div class="truncate text-[11px] text-zinc-500 dark:text-zinc-400">PID: {p.pid}{#if p.exePath} · {p.exePath}{/if}</div>
+            <div class="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+              PID: {p.pid}{#if p.exePath}
+                · {p.exePath}{/if}
+            </div>
           </div>
         </label>
       {/each}
     </div>
   {/if}
 </div>
-

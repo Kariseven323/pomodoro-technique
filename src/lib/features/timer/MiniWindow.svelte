@@ -55,7 +55,7 @@
 </script>
 
 <main
-  class="h-screen w-screen select-none bg-zinc-950 text-zinc-50"
+  class="h-screen w-screen bg-zinc-950 text-zinc-50 select-none"
   data-tauri-drag-region
   ondblclick={onDblClick}
   oncontextmenu={onContextMenu}
@@ -71,7 +71,7 @@
       </div>
       <div class="truncate text-[10px] text-zinc-400" data-tauri-drag-region>双击恢复 · 右键菜单</div>
     </div>
-    <div class="tabular-nums text-3xl font-semibold" data-tauri-drag-region>
+    <div class="text-3xl font-semibold tabular-nums" data-tauri-drag-region>
       {#if props.timer}
         {formatMmSs(props.timer.remainingSeconds)}
       {:else}

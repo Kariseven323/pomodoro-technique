@@ -19,4 +19,3 @@ export function phaseAccentClass(phase: Phase): string {
   if (phase === "shortBreak") return "text-emerald-600 dark:text-emerald-300";
   return "text-sky-600 dark:text-sky-300";
 }
-

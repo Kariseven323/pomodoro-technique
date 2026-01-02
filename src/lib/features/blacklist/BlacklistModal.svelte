@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { BlacklistItem, BlacklistTemplate, ProcessInfo } from "$lib/shared/types";
-  import { applyTemplate, deleteTemplate, getTemplates, listProcesses, saveTemplate } from "$lib/api/tauri";
+  import { listProcesses } from "$lib/api/tauri";
   import { createEventDispatcher } from "svelte";
   import BlacklistDraftList from "$lib/features/blacklist/components/BlacklistDraftList.svelte";
   import RunningProcessesPanel from "$lib/features/blacklist/components/RunningProcessesPanel.svelte";
-  import TemplateSelector from "$lib/features/blacklist/components/TemplateSelector.svelte";
+  import TemplateManager from "$lib/features/blacklist/components/TemplateManager.svelte";
 
   const props = $props<{
     open: boolean;
@@ -20,18 +20,12 @@
     templatesChange: { templates: BlacklistTemplate[]; activeTemplateIds: string[]; blacklist: BlacklistItem[] };
   }>();
 
-	  let loading = $state(false);
-	  let error = $state<string | null>(null);
-	  let processes = $state<ProcessInfo[]>([]);
+  let loading = $state(false);
+  let error = $state<string | null>(null);
+  let processes = $state<ProcessInfo[]>([]);
   let lastUpdatedAt = $state<number | null>(null);
   let draft = $state<BlacklistItem[]>([]);
   let originalNames = $state<string[]>([]);
-  let templatesDraft = $state<BlacklistTemplate[]>([]);
-  let activeTemplateIdsDraft = $state<string[]>([]);
-  let templateNotice = $state<string | null>(null);
-  let templateError = $state<string | null>(null);
-  let saveTemplateName = $state("");
-  let quickTemplateId = $state<string>("");
   let autoRefreshTimerId: number | null = null;
   let autoRefreshCleanup: (() => void) | null = null;
 
@@ -55,16 +49,6 @@
     originalNames = nextOriginal;
   }
 
-  /** 将 `templates/activeTemplateIds` 同步到本地草稿（用于模板切换与管理）。 */
-  function syncTemplatesFromProps(): void {
-    templatesDraft = props.templates.map((t: BlacklistTemplate) => ({
-      ...t,
-      processes: t.processes.map((p: BlacklistItem) => ({ ...p })),
-    }));
-    activeTemplateIdsDraft = [...props.activeTemplateIds];
-    quickTemplateId = templatesDraft[0]?.id ?? "";
-  }
-
   /** 关闭弹窗（不保存）。 */
   function closeModal(): void {
     dispatch("close");
@@ -82,22 +66,6 @@
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
-    }
-  }
-
-  /** 从后端刷新模板列表（打开弹窗时使用）。 */
-  async function loadTemplates(): Promise<void> {
-    templateError = null;
-    try {
-      const tpls = await getTemplates();
-      templatesDraft = tpls.map((t: BlacklistTemplate) => ({
-        ...t,
-        processes: t.processes.map((p: BlacklistItem) => ({ ...p })),
-      }));
-      quickTemplateId = templatesDraft[0]?.id ?? "";
-      dispatch("templatesChange", { templates: templatesDraft, activeTemplateIds: activeTemplateIdsDraft, blacklist: draft });
-    } catch (e) {
-      templateError = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -212,105 +180,32 @@
     dispatch("save", out);
   }
 
-  /** 判断模板是否已启用。 */
-  function isTemplateActive(id: string): boolean {
-    return activeTemplateIdsDraft.includes(id);
-  }
-
-  /** 切换模板启用状态（专注期内禁止）。 */
-  async function toggleTemplate(id: string): Promise<void> {
-    if (props.locked) return;
-    templateError = null;
-    templateNotice = null;
-    try {
-      const nextBlacklist = await applyTemplate(id);
-      const nextActive = isTemplateActive(id)
-        ? activeTemplateIdsDraft.filter((x) => x !== id)
-        : [...activeTemplateIdsDraft, id];
-      nextActive.sort();
-      activeTemplateIdsDraft = nextActive;
-
-      draft = nextBlacklist.map((b) => ({ ...b }));
-      originalNames = draft.map((b) => normalizeName(b.name));
-
-      dispatch("templatesChange", { templates: templatesDraft, activeTemplateIds: nextActive, blacklist: nextBlacklist });
-      templateNotice = "已应用模板";
-      window.setTimeout((): void => {
-        templateNotice = null;
-      }, 1800);
-    } catch (e) {
-      templateError = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  /** 快速应用下拉选择的模板（等价于切换启用状态）。 */
-  function applyQuickTemplate(): void {
-    if (!quickTemplateId) return;
-    void toggleTemplate(quickTemplateId);
-  }
-
-  /** 另存为新模板：将当前草稿黑名单保存为自定义模板。 */
-  async function saveCurrentAsTemplate(): Promise<void> {
-    const name = saveTemplateName.trim();
-    if (!name) return;
-    templateError = null;
-    templateNotice = null;
-    try {
-      const created = await saveTemplate({ id: "", name, builtin: false, processes: draft.map((b) => ({ ...b })) });
-      const next = templatesDraft.filter((t) => t.id !== created.id);
-      next.push(created);
-      templatesDraft = next;
-      saveTemplateName = "";
-      dispatch("templatesChange", { templates: templatesDraft, activeTemplateIds: activeTemplateIdsDraft, blacklist: draft });
-      templateNotice = "已保存为新模板";
-      window.setTimeout((): void => {
-        templateNotice = null;
-      }, 1800);
-    } catch (e) {
-      templateError = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  /** 删除自定义模板（内置模板不可删除）。 */
-  async function deleteTemplateById(id: string): Promise<void> {
-    templateError = null;
-    templateNotice = null;
-    try {
-      const ok = await deleteTemplate(id);
-      if (!ok) return;
-      templatesDraft = templatesDraft.filter((t) => t.id !== id);
-      activeTemplateIdsDraft = activeTemplateIdsDraft.filter((x) => x !== id);
-      dispatch("templatesChange", { templates: templatesDraft, activeTemplateIds: activeTemplateIdsDraft, blacklist: draft });
-      templateNotice = "已删除模板";
-      window.setTimeout((): void => {
-        templateNotice = null;
-      }, 1800);
-    } catch (e) {
-      templateError = e instanceof Error ? e.message : String(e);
-    }
-  }
-
   /** 响应 `open` 变化：打开时加载并同步，关闭时清理状态。 */
   function onOpenEffect(): void {
-	    if (props.open) {
-	      syncDraftFromProps();
-	      syncTemplatesFromProps();
-	      refreshProcessesNow();
-	      void loadTemplates();
-	      startAutoRefresh();
-	    } else {
-	      stopAutoRefresh();
-	      error = null;
-	      templateError = null;
-	      templateNotice = null;
-	    }
-	  }
+    if (props.open) {
+      syncDraftFromProps();
+      refreshProcessesNow();
+      startAutoRefresh();
+    } else {
+      stopAutoRefresh();
+      error = null;
+    }
+  }
 
   $effect(onOpenEffect);
 
   /** 判断某条目是否为打开弹窗时“已有条目”（用于锁定时禁用移除）。 */
   function isOriginalName(name: string): boolean {
     return originalNames.includes(normalizeName(name));
+  }
+
+  /** 处理模板管理器推送的模板变更：同步黑名单草稿并向上抛出事件。 */
+  function onTemplatesChange(
+    e: CustomEvent<{ templates: BlacklistTemplate[]; activeTemplateIds: string[]; blacklist: BlacklistItem[] }>,
+  ): void {
+    draft = e.detail.blacklist.map((b) => ({ ...b }));
+    originalNames = draft.map((b) => normalizeName(b.name));
+    dispatch("templatesChange", e.detail);
   }
 </script>
 
@@ -347,96 +242,29 @@
           </div>
         </div>
 
-        <div class="mb-4 rounded-2xl border border-black/10 bg-white/60 p-4 dark:border-white/10 dark:bg-white/5">
-        <div class="mb-2 flex items-start justify-between gap-3">
-            <div>
-              <div class="text-sm font-medium text-zinc-900 dark:text-zinc-50">黑名单模板</div>
-              <div class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
-                {#if props.locked}
-                  专注期内禁止切换模板。
-                {:else}
-                  可同时启用多套模板；切换会自动填充黑名单。
-                {/if}
-              </div>
-            </div>
-            <button
-              type="button"
-              class="rounded-xl px-2 py-1 text-xs text-zinc-600 hover:bg-black/5 dark:text-zinc-300 dark:hover:bg-white/10"
-              onclick={loadTemplates}
-            >
-              刷新模板
-            </button>
-          </div>
-
-          {#if templateNotice}
-            <div class="mb-2 text-xs text-emerald-700 dark:text-emerald-300">{templateNotice}</div>
-          {/if}
-          {#if templateError}
-            <div class="mb-2 text-xs text-red-600 dark:text-red-300">失败：{templateError}</div>
-          {/if}
-
-          <div class="max-h-40 overflow-auto pr-1">
-            <TemplateSelector
-              templates={templatesDraft}
-              activeTemplateIds={activeTemplateIdsDraft}
-              locked={props.locked}
-              on:toggle={(e) => void toggleTemplate(e.detail)}
-              on:delete={(e) => void deleteTemplateById(e.detail)}
-            />
-          </div>
-
-          <div class="mt-3 flex items-center gap-2">
-            <select
-              class="min-w-0 flex-1 rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs text-zinc-900 outline-none disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
-              bind:value={quickTemplateId}
-              disabled={templatesDraft.length === 0 || props.locked}
-            >
-              {#each templatesDraft as t (t.id)}
-                <option class="bg-white text-zinc-900" value={t.id}>{t.name}</option>
-              {/each}
-            </select>
-            <button
-              type="button"
-              class="shrink-0 rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs text-zinc-700 hover:bg-white disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
-              disabled={!quickTemplateId || props.locked}
-              onclick={applyQuickTemplate}
-            >
-              应用
-            </button>
-          </div>
-
-          <div class="mt-3 flex items-center gap-2">
-            <input
-              class="min-w-0 flex-1 rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs text-zinc-900 outline-none dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
-              placeholder="基于当前黑名单另存为新模板..."
-              bind:value={saveTemplateName}
-              disabled={draft.length === 0}
-            />
-            <button
-              type="button"
-              class="shrink-0 rounded-2xl bg-zinc-900 px-3 py-2 text-xs font-medium text-white shadow hover:bg-zinc-800 disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
-              disabled={!saveTemplateName.trim() || draft.length === 0}
-              onclick={() => void saveCurrentAsTemplate()}
-            >
-              另存为
-            </button>
-          </div>
-        </div>
+        <TemplateManager
+          open={props.open}
+          locked={props.locked}
+          templates={props.templates}
+          activeTemplateIds={props.activeTemplateIds}
+          {draft}
+          on:templatesChange={onTemplatesChange}
+        />
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <BlacklistDraftList
-            draft={draft}
+            {draft}
             locked={props.locked}
-            isOriginalName={isOriginalName}
+            {isOriginalName}
             onDisplayNameChange={setDisplayName}
             onRemove={removeFromDraft}
           />
           <RunningProcessesPanel
-            processes={processes}
-            loading={loading}
-            error={error}
-            lastUpdatedAt={lastUpdatedAt}
-            hasInDraft={hasInDraft}
+            {processes}
+            {loading}
+            {error}
+            {lastUpdatedAt}
+            {hasInDraft}
             onToggle={toggleProcess}
             onRefresh={refreshProcessesNow}
           />

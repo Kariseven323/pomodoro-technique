@@ -36,6 +36,7 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
 rand = "0.8"
+ts-rs = "9"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

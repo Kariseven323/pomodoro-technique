@@ -12,7 +12,7 @@
 
 <img src="src-tauri/icons/icon.png" width="128" height="128" alt="Pomodoro Icon">
 
-*一款为 Windows 打造的番茄钟桌面应用，在专注模式下自动终止干扰程序，让你的工作效率飙升 🚀*
+_一款为 Windows 打造的番茄钟桌面应用，在专注模式下自动终止干扰程序，让你的工作效率飙升 🚀_
 
 [功能特性](#-功能特性) •
 [快速开始](#-快速开始) •
@@ -30,6 +30,7 @@
 <td width="50%">
 
 ### 🎯 智能番茄钟
+
 - **经典番茄工作法**：25 分钟工作 + 5 分钟短休息
 - **自动阶段切换**：工作 → 短休息 → 长休息循环
 - **灵活时间配置**：自定义各阶段时长
@@ -39,6 +40,7 @@
 <td width="50%">
 
 ### 🛡️ 进程守护
+
 - **黑名单管理**：添加需要屏蔽的干扰程序
 - **自动终止**：专注期间自动 kill 黑名单进程
 - **智能锁定**：专注时黑名单只增不减
@@ -50,6 +52,7 @@
 <td width="50%">
 
 ### 🏷️ 任务标签
+
 - **多标签支持**：为不同任务创建专属标签
 - **快速切换**：一键切换当前工作标签
 - **统计追踪**：按标签统计今日完成数
@@ -58,6 +61,7 @@
 <td width="50%">
 
 ### 📊 数据统计
+
 - **今日概览**：实时显示今日完成的番茄数
 - **分类统计**：按标签查看完成情况
 - **本地持久化**：数据安全存储于本地
@@ -135,13 +139,13 @@ bun run tauri build
 
 ### 核心模块
 
-| 模块 | 路径 | 职责 |
-|------|------|------|
-| **Timer Engine** | `src-tauri/src/timer.rs` | 计时器状态机，管理 work/shortBreak/longBreak 阶段 |
-| **Process Manager** | `src-tauri/src/processes.rs` | 进程枚举与终止，调用 Windows API |
-| **State Manager** | `src-tauri/src/state.rs` | 全局状态管理 (AppState) |
-| **Commands** | `src-tauri/src/commands.rs` | Tauri 命令实现，前后端桥接 |
-| **Frontend** | `src/routes/+page.svelte` | 主界面 UI，计时器、标签、统计 |
+| 模块                | 路径                         | 职责                                              |
+| ------------------- | ---------------------------- | ------------------------------------------------- |
+| **Timer Engine**    | `src-tauri/src/timer.rs`     | 计时器状态机，管理 work/shortBreak/longBreak 阶段 |
+| **Process Manager** | `src-tauri/src/processes.rs` | 进程枚举与终止，调用 Windows API                  |
+| **State Manager**   | `src-tauri/src/state.rs`     | 全局状态管理 (AppState)                           |
+| **Commands**        | `src-tauri/src/commands.rs`  | Tauri 命令实现，前后端桥接                        |
+| **Frontend**        | `src/routes/+page.svelte`    | 主界面 UI，计时器、标签、统计                     |
 
 ---
 

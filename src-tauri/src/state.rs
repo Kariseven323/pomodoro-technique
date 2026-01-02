@@ -37,7 +37,8 @@ impl AppState {
         store: std::sync::Arc<tauri_plugin_store::Store<tauri::Wry>>,
         data: AppData,
     ) -> Self {
-        let timer = TimerRuntime::new(&data.settings, &data.tags);
+        let clock = crate::timer::SystemClock;
+        let timer = TimerRuntime::new(&data.settings, &data.tags, &clock);
         Self {
             app,
             store,
@@ -146,7 +147,9 @@ impl AppState {
     pub fn tick(&self) -> AppResult<TickResult> {
         let mut data = self.data.lock().unwrap();
         let mut timer = self.timer.lock().unwrap();
-        let result = timer.tick(&mut data, &self.app)?;
+        let clock = crate::timer::SystemClock;
+        let notifier = crate::timer::TauriNotifier::new(&self.app);
+        let result = timer.tick(&mut data, &clock, &notifier)?;
         if result.history_changed {
             self.persist_locked(&data)?;
         }
