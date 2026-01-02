@@ -4,12 +4,22 @@
   "description": "Windows 番茄钟（专注模式自动终止干扰程序）",
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "preview": "vite preview",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri"
+    "dev": "bunx --bun vite dev",
+    "build": "bunx --bun vite build",
+    "preview": "bunx --bun vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "bunx --bun -p @sveltejs/kit svelte-kit sync && bunx --bun svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "bunx --bun -p @sveltejs/kit svelte-kit sync && bunx --bun svelte-check --tsconfig ./tsconfig.json --watch",
+    "types:gen": "cargo run --manifest-path src-tauri/Cargo.toml --bin gen_ts_types && bunx prettier src/lib/shared/types.generated.ts --write",
+    "types:check": "bun run types:gen && git diff --exit-code src/lib/shared/types.generated.ts",
+    "lint": "bunx eslint .",
+    "lint:fix": "bunx eslint . --fix",
+    "format": "bunx prettier . --write",
+    "format:check": "bunx prettier . --check",
+    "prepare": "bunx husky install",
+    "tauri": "bunx -p @tauri-apps/cli tauri"
   },
   "license": "MIT",
   "dependencies": {
@@ -17,15 +27,40 @@
     "@tauri-apps/plugin-opener": "^2"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@sveltejs/adapter-static": "^3.0.6",
     "@sveltejs/kit": "^2.9.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tauri-apps/cli": "^2",
+    "@testing-library/svelte": "^5.3.1",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^4.0.16",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-svelte": "^2.0.0",
+    "globals": "^15.0.0",
+    "husky": "^9.0.0",
+    "jsdom": "^27.4.0",
+    "lint-staged": "^15.0.0",
+    "prettier": "^3.0.0",
+    "prettier-plugin-svelte": "^3.0.0",
+    "prettier-plugin-tailwindcss": "^0.7.2",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
+    "svelte-eslint-parser": "^0.39.0",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.6.2",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vitest": "^4.0.16"
+  },
+  "lint-staged": {
+    "*.{js,ts,svelte,json,md,css}": [
+      "prettier --write"
+    ],
+    "*.{ts,svelte}": [
+      "eslint --fix"
+    ]
   }
 }

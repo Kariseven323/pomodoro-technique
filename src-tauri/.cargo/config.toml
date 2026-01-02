@@ -1,0 +1,4 @@
+[alias]
+# 更严格的 clippy：覆盖所有 target，并将 warning 视为错误（用于 CI/提交前自检）。
+clippy-strict = "clippy --all-targets -- -D warnings"
+

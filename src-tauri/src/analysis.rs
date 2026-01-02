@@ -4,13 +4,15 @@ use std::collections::BTreeMap;
 
 use chrono::{Datelike as _, NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::app_data::{DateRange, HistoryDay};
 use crate::errors::{AppError, AppResult};
 
 /// 专注分析结果（用于前端图表渲染）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct FocusAnalysis {
     /// 24 小时分布（按 `startTime` 的小时计数）。
     pub hourly_counts: Vec<u32>,
@@ -27,8 +29,9 @@ pub struct FocusAnalysis {
 }
 
 /// 标签效率条目。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct TagEfficiency {
     /// 标签名。
     pub tag: String,
@@ -75,12 +78,11 @@ pub fn get_focus_analysis(days: &[HistoryDay], range: &DateRange) -> AppResult<F
     let mut tag_efficiency: Vec<TagEfficiency> = tag_total
         .into_iter()
         .map(|(tag, total)| {
-            let count = tag_count.get(&tag).copied().unwrap_or(0);
-            let avg = if count == 0 {
-                0.0
-            } else {
-                total as f64 / count as f64
-            };
+            let count = tag_count
+                .get(&tag)
+                .copied()
+                .expect("tag_total 与 tag_count 应保持键一致");
+            let avg = total as f64 / count as f64;
             TagEfficiency {
                 tag,
                 avg_duration: avg,
@@ -204,4 +206,233 @@ fn time_range_label(from_hour: usize, to_hour: usize) -> String {
     let f = normalize(display_from, is_pm);
     let t = normalize(display_to, is_pm);
     format!("{prefix} {f}-{t} 点")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::app_data::{HistoryRecord, Phase};
+
+    /// 构造一条最小的历史记录（用于专注分析测试）。
+    fn record(tag: &str, start_time: &str, duration: u32) -> HistoryRecord {
+        HistoryRecord {
+            tag: tag.to_string(),
+            start_time: start_time.to_string(),
+            end_time: None,
+            duration,
+            phase: Phase::Work,
+            remark: String::new(),
+        }
+    }
+
+    /// `parse_range`：合法范围应通过，并返回正确的 NaiveDate。
+    #[test]
+    fn parse_range_accepts_valid_range() {
+        let (from, to) = parse_range(&DateRange {
+            from: "2025-01-01".to_string(),
+            to: "2025-01-07".to_string(),
+        })
+        .unwrap();
+        assert_eq!(from, NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
+        assert_eq!(to, NaiveDate::from_ymd_opt(2025, 1, 7).unwrap());
+    }
+
+    /// `parse_range`：当 from > to 时应返回校验错误。
+    #[test]
+    fn parse_range_rejects_from_after_to() {
+        let err = parse_range(&DateRange {
+            from: "2025-01-08".to_string(),
+            to: "2025-01-07".to_string(),
+        })
+        .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    /// `parse_range`：日期格式错误应返回校验错误。
+    #[test]
+    fn parse_range_rejects_invalid_format() {
+        let err = parse_range(&DateRange {
+            from: "2025/01/01".to_string(),
+            to: "2025-01-07".to_string(),
+        })
+        .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    /// `parse_hour`：应支持边界值（00:00/23:59）与常见格式。
+    #[test]
+    fn parse_hour_supports_boundaries() {
+        assert_eq!(parse_hour("00:00"), Some(0));
+        assert_eq!(parse_hour("23:59"), Some(23));
+        assert_eq!(parse_hour(" 9:01 "), Some(9));
+    }
+
+    /// `parse_hour`：非法格式应返回 None。
+    #[test]
+    fn parse_hour_rejects_invalid_format() {
+        assert_eq!(parse_hour(""), None);
+        assert_eq!(parse_hour("xx:yy"), None);
+        assert_eq!(parse_hour("24:00"), None);
+        assert_eq!(parse_hour("12"), Some(12));
+    }
+
+    /// `period_index`：应按 0/6/12/18 边界映射到 4 个时段桶。
+    #[test]
+    fn period_index_respects_boundaries() {
+        assert_eq!(period_index(0), 0);
+        assert_eq!(period_index(5), 0);
+        assert_eq!(period_index(6), 1);
+        assert_eq!(period_index(11), 1);
+        assert_eq!(period_index(12), 2);
+        assert_eq!(period_index(17), 2);
+        assert_eq!(period_index(18), 3);
+        assert_eq!(period_index(23), 3);
+    }
+
+    /// `weekday_to_index`：应将周一到周日映射为 0..=6。
+    #[test]
+    fn weekday_to_index_maps_mon_to_sun() {
+        assert_eq!(weekday_to_index(Weekday::Mon), 0);
+        assert_eq!(weekday_to_index(Weekday::Tue), 1);
+        assert_eq!(weekday_to_index(Weekday::Wed), 2);
+        assert_eq!(weekday_to_index(Weekday::Thu), 3);
+        assert_eq!(weekday_to_index(Weekday::Fri), 4);
+        assert_eq!(weekday_to_index(Weekday::Sat), 5);
+        assert_eq!(weekday_to_index(Weekday::Sun), 6);
+    }
+
+    /// `build_summary`：空数据应返回“暂无分析数据”。
+    #[test]
+    fn build_summary_returns_no_data_when_empty() {
+        assert_eq!(build_summary(&vec![0u32; 24]), "暂无分析数据");
+    }
+
+    /// `build_summary`：当输入长度不是 24 时应返回“暂无分析数据”。
+    #[test]
+    fn build_summary_returns_no_data_when_len_is_not_24() {
+        assert_eq!(build_summary(&vec![0u32; 0]), "暂无分析数据");
+        assert_eq!(build_summary(&vec![0u32; 23]), "暂无分析数据");
+        assert_eq!(build_summary(&vec![0u32; 25]), "暂无分析数据");
+    }
+
+    /// `build_summary`：应选择番茄数量最多的连续 2 小时窗口。
+    #[test]
+    fn build_summary_picks_best_two_hour_window() {
+        let mut hourly = vec![0u32; 24];
+        hourly[8] = 1;
+        hourly[9] = 3;
+        hourly[10] = 3; // 9-11 窗口合计 6，为最大
+        hourly[11] = 1;
+        let summary = build_summary(&hourly);
+        assert!(summary.contains("专注效率最高"));
+        assert!(summary.contains("上午 9-11 点"));
+    }
+
+    /// `time_range_label`：应按凌晨/上午/下午/晚上输出，并处理 12 点边界。
+    #[test]
+    fn time_range_label_formats_periods_and_12_boundary() {
+        assert_eq!(time_range_label(0, 2), "凌晨 0-2 点");
+        assert_eq!(time_range_label(6, 8), "上午 6-8 点");
+        assert_eq!(time_range_label(12, 14), "下午 12-2 点");
+        assert_eq!(time_range_label(18, 20), "晚上 6-8 点");
+    }
+
+    /// `get_focus_analysis`：空历史应返回全 0 分布与“暂无分析数据”摘要。
+    #[test]
+    fn get_focus_analysis_handles_empty_days() {
+        let out = get_focus_analysis(
+            &[],
+            &DateRange {
+                from: "2025-01-01".to_string(),
+                to: "2025-01-07".to_string(),
+            },
+        )
+        .unwrap();
+        assert_eq!(out.hourly_counts, vec![0u32; 24]);
+        assert_eq!(out.period_counts, vec![0u32; 4]);
+        assert_eq!(out.weekday_counts, vec![0u32; 7]);
+        assert_eq!(out.weekday_hour_counts.len(), 7);
+        assert_eq!(out.weekday_hour_counts[0].len(), 24);
+        assert_eq!(out.tag_efficiency.len(), 0);
+        assert_eq!(out.summary, "暂无分析数据");
+    }
+
+    /// `get_focus_analysis`：单日数据应正确累计小时/时段/星期与标签效率。
+    #[test]
+    fn get_focus_analysis_handles_single_day() {
+        let days = vec![HistoryDay {
+            date: "2025-01-01".to_string(), // 2025-01-01 是周三
+            records: vec![
+                record("学习", "09:10", 25),
+                record("学习", "09:40", 30),
+                record("工作", "10:00", 15),
+            ],
+        }];
+
+        let out = get_focus_analysis(
+            &days,
+            &DateRange {
+                from: "2025-01-01".to_string(),
+                to: "2025-01-01".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(out.hourly_counts[9], 2);
+        assert_eq!(out.hourly_counts[10], 1);
+        assert_eq!(out.period_counts[1], 3); // 6-12
+
+        // 周三 -> index 2
+        assert_eq!(out.weekday_counts[2], 3);
+        assert_eq!(out.weekday_hour_counts[2][9], 2);
+        assert_eq!(out.weekday_hour_counts[2][10], 1);
+
+        // 标签效率按样本数排序：学习(2) 在前
+        assert_eq!(out.tag_efficiency[0].tag, "学习");
+        assert_eq!(out.tag_efficiency[0].count, 2);
+        assert!((out.tag_efficiency[0].avg_duration - 27.5).abs() < 1e-9);
+        assert_eq!(out.tag_efficiency[1].tag, "工作");
+        assert_eq!(out.tag_efficiency[1].count, 1);
+        assert!((out.tag_efficiency[1].avg_duration - 15.0).abs() < 1e-9);
+    }
+
+    /// `get_focus_analysis`：日期范围应为闭区间，并忽略范围外数据与非法日期。
+    #[test]
+    fn get_focus_analysis_respects_inclusive_range_and_skips_invalid_dates() {
+        let days = vec![
+            HistoryDay {
+                date: "2025-01-01".to_string(),
+                records: vec![record("A", "08:00", 25)],
+            },
+            HistoryDay {
+                date: "2025-01-02".to_string(),
+                records: vec![record("B", "09:00", 25)],
+            },
+            HistoryDay {
+                date: "2025-01-03".to_string(),
+                records: vec![record("C", "10:00", 25)],
+            },
+            HistoryDay {
+                date: "bad-date".to_string(),
+                records: vec![record("D", "11:00", 25)],
+            },
+        ];
+
+        let out = get_focus_analysis(
+            &days,
+            &DateRange {
+                from: "2025-01-02".to_string(),
+                to: "2025-01-03".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(out.hourly_counts[8], 0);
+        assert_eq!(out.hourly_counts[9], 1);
+        assert_eq!(out.hourly_counts[10], 1);
+        assert_eq!(out.tag_efficiency.len(), 2);
+        assert_eq!(out.tag_efficiency[0].tag, "B");
+        assert_eq!(out.tag_efficiency[1].tag, "C");
+    }
 }

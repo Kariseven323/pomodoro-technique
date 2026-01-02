@@ -1,6 +1,7 @@
 //! PRD 约定的数据结构（settings / blacklist / tags / history）。
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Store 文件名（最终路径由后端根据平台解析到统一的数据根目录下）。
 pub const STORE_FILE_NAME: &str = "pomodoro-data.json";
@@ -9,8 +10,9 @@ pub const STORE_FILE_NAME: &str = "pomodoro-data.json";
 pub const STORE_KEY: &str = "appData";
 
 /// 计时器/历史记录阶段（与前端 `Phase` 类型对齐）。
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub enum Phase {
     /// 工作（番茄）。
     Work,
@@ -28,8 +30,9 @@ impl Default for Phase {
 }
 
 /// 番茄钟设置。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct Settings {
     /// 工作时长（分钟）。
     pub pomodoro: u32,
@@ -89,8 +92,9 @@ impl Default for Settings {
 }
 
 /// 黑名单条目（以进程名为主键）。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct BlacklistItem {
     /// 进程名（例如 `WeChat.exe`）。
     pub name: String,
@@ -99,8 +103,9 @@ pub struct BlacklistItem {
 }
 
 /// 黑名单模板（可内置/可自定义）。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct BlacklistTemplate {
     /// 模板 id（内置模板为固定值，自定义模板可为 uuid/自定义字符串）。
     pub id: String,
@@ -113,8 +118,9 @@ pub struct BlacklistTemplate {
 }
 
 /// 单条历史记录（仅记录完成的“工作”阶段）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct HistoryRecord {
     /// 任务标签。
     pub tag: String,
@@ -134,8 +140,9 @@ pub struct HistoryRecord {
 }
 
 /// 某一天的历史集合。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct HistoryDay {
     /// 日期（YYYY-MM-DD）。
     pub date: String,
@@ -144,8 +151,9 @@ pub struct HistoryDay {
 }
 
 /// 日期范围（闭区间）：`from <= date <= to`。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct DateRange {
     /// 起始日期（YYYY-MM-DD）。
     pub from: String,
@@ -154,8 +162,9 @@ pub struct DateRange {
 }
 
 /// 应用持久化数据根对象。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
 pub struct AppData {
     /// 用户设置。
     pub settings: Settings,
@@ -321,4 +330,106 @@ fn builtin_templates() -> Vec<BlacklistTemplate> {
             ],
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// v2 迁移：当模板列表缺失时应补齐内置模板，并修复激活模板字段。
+    #[test]
+    fn migrate_v2_fills_templates_and_active_ids() {
+        let mut data = AppData {
+            blacklist_templates: Vec::new(),
+            active_template_ids: Vec::new(),
+            active_template_id: Some("work".to_string()),
+            ..AppData::default()
+        };
+
+        let changed = data.migrate_v2();
+        assert!(changed);
+        assert!(!data.blacklist_templates.is_empty());
+        assert!(!data.active_template_ids.is_empty());
+        assert_eq!(data.active_template_ids[0], "work");
+        assert_eq!(data.active_template_id.as_deref(), Some("work"));
+    }
+
+    /// v2 迁移：应保证 `active_template_id` 与数组首项一致，便于兼容读取。
+    #[test]
+    fn migrate_v2_keeps_active_template_id_in_sync() {
+        let mut data = AppData {
+            active_template_ids: vec!["deep".to_string()],
+            active_template_id: Some("work".to_string()),
+            ..AppData::default()
+        };
+
+        let changed = data.migrate_v2();
+        assert!(changed);
+        assert_eq!(data.active_template_id.as_deref(), Some("deep"));
+    }
+
+    /// `Settings::default`：默认值应符合 PRD 约定（25/5/15/4 + 目标值）。
+    #[test]
+    fn settings_default_matches_prd() {
+        let s = Settings::default();
+        assert_eq!(s.pomodoro, 25);
+        assert_eq!(s.short_break, 5);
+        assert_eq!(s.long_break, 15);
+        assert_eq!(s.long_break_interval, 4);
+        assert_eq!(s.auto_continue_enabled, false);
+        assert_eq!(s.auto_continue_pomodoros, 4);
+        assert_eq!(s.daily_goal, 8);
+        assert_eq!(s.weekly_goal, 40);
+        assert_eq!(s.always_on_top, false);
+    }
+
+    /// `builtin_templates`：应包含固定的内置模板集合，且均标记为 builtin。
+    #[test]
+    fn builtin_templates_have_expected_ids_and_flags() {
+        let templates = builtin_templates();
+        assert!(templates.len() >= 3);
+        assert!(templates.iter().all(|t| t.builtin));
+
+        let ids: std::collections::BTreeSet<String> =
+            templates.iter().map(|t| t.id.clone()).collect();
+        assert_eq!(ids.len(), templates.len());
+        assert!(ids.contains("work"));
+        assert!(ids.contains("study"));
+        assert!(ids.contains("deep"));
+    }
+
+    /// `AppData::default`：应填充默认模板/默认激活模板，并回填默认黑名单与标签。
+    #[test]
+    fn app_data_default_initializes_templates_blacklist_and_tags() {
+        let data = AppData::default();
+
+        assert!(!data.blacklist_templates.is_empty());
+        assert_eq!(data.active_template_ids.first().map(|s| s.as_str()), Some("work"));
+        assert_eq!(data.active_template_id.as_deref(), Some("work"));
+
+        let work_template = data
+            .blacklist_templates
+            .iter()
+            .find(|t| t.id == "work")
+            .expect("work 模板必须存在");
+        assert_eq!(data.blacklist, work_template.processes);
+
+        assert_eq!(
+            data.tags,
+            vec!["工作".to_string(), "学习".to_string(), "阅读".to_string(), "写作".to_string()]
+        );
+        assert!(data.history.is_empty());
+    }
+
+    /// `Phase::default`：应回退为工作阶段（用于旧数据缺失字段时兼容）。
+    #[test]
+    fn phase_default_is_work() {
+        assert_eq!(Phase::default(), Phase::Work);
+    }
+
+    /// `default_auto_continue_pomodoros`：应返回 PRD 约定的默认连续番茄数量。
+    #[test]
+    fn default_auto_continue_pomodoros_matches_prd() {
+        assert_eq!(default_auto_continue_pomodoros(), 4);
+    }
 }
