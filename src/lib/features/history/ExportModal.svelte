@@ -48,15 +48,10 @@
 
 {#if props.open}
   <div class="fixed inset-0 z-50">
-    <button
-      type="button"
-      class="absolute inset-0 bg-black/30 backdrop-blur-sm"
-      aria-label="关闭弹窗"
-      onclick={closeModal}
-    ></button>
+    <button type="button" class="absolute inset-0 bg-black/30" aria-label="关闭弹窗" onclick={closeModal}></button>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div
-        class="w-full max-w-lg rounded-3xl border border-white/20 bg-white/80 p-5 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/70"
+        class="w-full max-w-lg rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900"
       >
         <div class="mb-4 flex items-center justify-between gap-3">
           <div>

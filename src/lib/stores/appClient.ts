@@ -1,8 +1,10 @@
 /** 应用前端全局状态：集中维护 `AppData`/`TimerSnapshot` 与 Tauri 事件监听。 */
 
+import { isTauri } from "@tauri-apps/api/core";
 import { listen, type Event as TauriEvent, type UnlistenFn } from "@tauri-apps/api/event";
 import { writable } from "svelte/store";
-import { getAppSnapshot } from "$lib/api/tauri";
+import { frontendLog, getAppSnapshot } from "$lib/api/tauri";
+import { miniMode } from "$lib/stores/uiState";
 import type {
   AppData,
   AppSnapshot,
@@ -49,6 +51,31 @@ export const audioLibraryChangedAt = writable<number>(0);
 let initialized = false;
 let unlistenFns: UnlistenFn[] = [];
 
+/** 判断当前是否处于 Tauri 宿主环境（避免浏览器环境下 invoke/listen 永久 pending）。 */
+function isTauriRuntimeSafe(): boolean {
+  if (import.meta.env.VITEST) return true;
+  try {
+    return isTauri();
+  } catch {
+    return false;
+  }
+}
+
+/** 将一个 Promise 包装为“超时失败”，避免初始化阶段永久卡住。 */
+async function withTimeout<T>(p: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: number | null = null;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<T>((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  }
+}
+
 /** 将后端返回的 `AppSnapshot` 写入全局 store。 */
 export function applyAppSnapshot(snapshot: AppSnapshot): void {
   appData.set(snapshot.data);
@@ -89,16 +116,46 @@ export async function initAppClient(): Promise<void> {
   initialized = true;
   appLoading.set(true);
   appError.set(null);
+  let ok = false;
   try {
-    const snapshot = await getAppSnapshot();
+    if (!isTauriRuntimeSafe()) {
+      throw new Error("当前未运行在桌面端（Tauri）环境，请使用 `bun run tauri dev` 或桌面应用启动。");
+    }
+
+    void withTimeout(frontendLog("info", "[frontend] initAppClient: start"), 800, "frontend_log timeout").catch(
+      () => {},
+    );
+    const snapshot = await withTimeout(getAppSnapshot(), 15000, "获取后端快照超时，请重启应用后重试。");
     applyAppSnapshot(snapshot);
+    void withTimeout(
+      frontendLog("info", "[frontend] initAppClient: snapshot loaded"),
+      800,
+      "frontend_log timeout",
+    ).catch(() => {});
+    ok = true;
   } catch (e) {
     appError.set(e instanceof Error ? e.message : String(e));
+    void withTimeout(
+      frontendLog("error", `[frontend] initAppClient failed: ${String(e)}`),
+      800,
+      "frontend_log timeout",
+    ).catch(() => {});
   } finally {
     appLoading.set(false);
+    if (!ok) initialized = false;
   }
 
-  await registerListeners();
+  if (ok) {
+    try {
+      await withTimeout(registerListeners(), 5000, "注册后端事件监听超时（listen 未返回）。");
+    } catch (e) {
+      void withTimeout(
+        frontendLog("warn", `[frontend] registerListeners failed: ${e instanceof Error ? e.message : String(e)}`),
+        800,
+        "frontend_log timeout",
+      ).catch(() => {});
+    }
+  }
 }
 
 /** 释放事件监听（一般不需要；仅用于热重载/测试场景）。 */
@@ -127,6 +184,7 @@ async function reloadSnapshotBestEffort(): Promise<void> {
 /** 注册 Tauri 后端事件监听。 */
 async function registerListeners(): Promise<void> {
   if (unlistenFns.length > 0) return;
+  if (!isTauriRuntimeSafe()) return;
 
   /** 处理后端推送的计时器快照事件。 */
   function onTimerSnapshotEvent(e: TauriEvent<TimerSnapshot>): void {
@@ -168,6 +226,11 @@ async function registerListeners(): Promise<void> {
     });
   }
 
+  /** 处理后端推送的“迷你模式变更”事件：同步到前端 UI 状态。 */
+  function onMiniModeChangedEvent(e: TauriEvent<boolean>): void {
+    miniMode.set(Boolean(e.payload));
+  }
+
   unlistenFns.push(await listen<TimerSnapshot>("pomodoro://snapshot", onTimerSnapshotEvent));
   unlistenFns.push(await listen<KillSummary>("pomodoro://kill_result", onKillResultEvent));
   unlistenFns.push(await listen<WorkCompletedEvent>("pomodoro://work_completed", onWorkCompletedEvent));
@@ -175,4 +238,5 @@ async function registerListeners(): Promise<void> {
   unlistenFns.push(await listen<PomodoroCompletedPayload>("pomodoro-completed", onPomodoroCompletedEvent));
   unlistenFns.push(await listen<MilestoneReachedPayload>("milestone-reached", onMilestoneReachedEvent));
   unlistenFns.push(await listen<CustomAudio[]>("pomodoro://audio_library_changed", onAudioLibraryChangedEvent));
+  unlistenFns.push(await listen<boolean>("pomodoro://mini_mode_changed", onMiniModeChangedEvent));
 }

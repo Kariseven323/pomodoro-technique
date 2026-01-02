@@ -25,7 +25,7 @@
 
   /** 从文件路径推导默认显示名（优先文件名去扩展名），用于“未填写导入后显示名称”场景。 */
   function defaultDisplayNameFromPath(path: string): string {
-    const normalized = path.replaceAll("\\\\", "/");
+    const normalized = path.replaceAll("\\", "/");
     const base = normalized.split("/").pop() ?? "";
     if (!base) return "自定义音效";
     const dot = base.lastIndexOf(".");

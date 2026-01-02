@@ -2,7 +2,6 @@
   import { exitApp, timerPause, timerStart, setMiniMode } from "$lib/api/tauri";
   import { miniMode } from "$lib/stores/uiState";
   import type { TimerSnapshot } from "$lib/shared/types";
-  import { phaseLabel } from "$lib/utils/phase";
   import { formatMmSs } from "$lib/utils/time";
 
   const props = $props<{ timer: TimerSnapshot | null }>();
@@ -52,26 +51,24 @@
   function onDblClick(): void {
     void restore();
   }
+
+  /** 根据阶段返回迷你模式背景色 class（PRD v5：工作红/短休息绿/长休息蓝）。 */
+  function phaseBgClass(phase: TimerSnapshot["phase"] | null | undefined): string {
+    if (phase === "work") return "bg-red-500";
+    if (phase === "shortBreak") return "bg-green-500";
+    if (phase === "longBreak") return "bg-blue-500";
+    return "bg-zinc-950";
+  }
 </script>
 
 <main
-  class="h-screen w-screen bg-zinc-950 text-zinc-50 select-none"
+  class={"h-screen w-screen text-zinc-50 select-none " + phaseBgClass(props.timer?.phase)}
   data-tauri-drag-region
   ondblclick={onDblClick}
   oncontextmenu={onContextMenu}
 >
-  <div class="flex h-full items-center justify-between gap-3 px-3" data-tauri-drag-region>
-    <div class="min-w-0">
-      <div class="text-xs text-zinc-300" data-tauri-drag-region>
-        {#if props.timer}
-          {phaseLabel(props.timer.phase)}
-        {:else}
-          —
-        {/if}
-      </div>
-      <div class="truncate text-[10px] text-zinc-400" data-tauri-drag-region>双击恢复 · 右键菜单</div>
-    </div>
-    <div class="text-3xl font-semibold tabular-nums" data-tauri-drag-region>
+  <div class="flex h-full items-center justify-center px-3" data-tauri-drag-region>
+    <div class="text-4xl font-bold tracking-tight tabular-nums" data-tauri-drag-region>
       {#if props.timer}
         {formatMmSs(props.timer.remainingSeconds)}
       {:else}
@@ -83,7 +80,7 @@
   {#if menuOpen}
     <button class="fixed inset-0 z-40" type="button" aria-label="关闭菜单" onclick={closeMenu}></button>
     <div
-      class="fixed z-50 w-36 overflow-hidden rounded-xl border border-white/10 bg-zinc-900 shadow-2xl"
+      class="fixed z-50 w-36 overflow-hidden rounded-2xl border border-white/20 bg-zinc-950 shadow-sm"
       style={`left:${menuX}px; top:${menuY}px;`}
     >
       <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/10" onclick={restore}>恢复</button>

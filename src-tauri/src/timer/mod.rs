@@ -5,13 +5,15 @@ mod runtime;
 pub(crate) mod stats;
 mod validation;
 
+#[cfg(not(test))]
 pub use notification::TauriNotifier;
-pub use runtime::{
-    SystemClock, TickResult, TimerClock, TimerRuntime, TimerSnapshot, WorkCompletedEvent,
-};
+#[cfg(not(test))]
+pub use runtime::TickResult;
+pub use runtime::{SystemClock, TimerClock, TimerRuntime, TimerSnapshot, WorkCompletedEvent};
 pub use stats::compute_today_stats;
 pub use validation::validate_settings;
 
+#[cfg(not(test))]
 use std::time::Duration;
 
 #[cfg(not(test))]

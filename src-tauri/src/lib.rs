@@ -1,5 +1,7 @@
 //! 番茄钟应用（Tauri 2）后端入口与命令注册。
 
+#![cfg_attr(test, allow(dead_code))]
+
 mod analysis;
 mod app_data;
 mod app_paths;
@@ -19,9 +21,7 @@ mod timer;
 #[cfg(not(test))]
 mod tray;
 pub mod typegen;
-
-use crate::app_data::{AppData, STORE_FILE_NAME, STORE_KEY};
-use crate::errors::{AppError, AppResult};
+mod window_events;
 
 #[cfg(not(test))]
 use std::time::Duration;
@@ -30,6 +30,13 @@ use std::time::Duration;
 use tauri::Manager as _;
 #[cfg(not(test))]
 use tauri_plugin_store::StoreExt;
+
+#[cfg(not(test))]
+use crate::app_data::STORE_FILE_NAME;
+#[cfg(not(test))]
+use crate::app_data::{AppData, STORE_KEY};
+#[cfg(not(test))]
+use crate::errors::{AppError, AppResult};
 
 #[cfg(not(test))]
 use crate::state::AppState;
@@ -82,6 +89,8 @@ pub fn run() {
             ipc::settings::set_goals,
             ipc::tags::set_current_tag,
             ipc::tags::add_tag,
+            ipc::tags::rename_tag,
+            ipc::tags::delete_tag,
             ipc::blacklist::set_blacklist,
             ipc::history::get_history,
             ipc::history::set_history_remark,
@@ -150,10 +159,11 @@ fn migrate_legacy_store_file(app: &tauri::AppHandle) -> AppResult<()> {
         misplaced_in_root_logs,
     ];
 
-    let Some(source) = candidates
-        .into_iter()
+    let source = candidates
+        .iter()
         .find(|path| path.exists() && path.is_file())
-    else {
+        .cloned();
+    let Some(source) = source else {
         return Ok(());
     };
 

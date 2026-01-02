@@ -3,6 +3,8 @@
 
   const props = $props<{ analysis: FocusAnalysis | null; loading: boolean; error: string | null }>();
 
+  type HeatHover = { weekdayIndex: number; hour: number; value: number };
+
   /** 计算数组最大值（空数组返回 0）。 */
   function max(arr: number[]): number {
     let m = 0;
@@ -41,8 +43,38 @@
     ["18-24", 3],
   ];
 
+  const hourTicks: number[] = [0, 6, 12, 18, 23];
+
   /** 周/小时热力图的最大值（用于强度归一化）。 */
   let heatMax = $derived(props.analysis ? maxMatrix(props.analysis.weekdayHourCounts) : 0);
+  let heatHover = $state<HeatHover | null>(null);
+
+  /** 生成周/小时热力图的悬停提示文案。 */
+  function heatHoverText(hover: HeatHover | null): string {
+    if (!hover) return "周— · —点：—";
+    return `周${weekdayLabel(hover.weekdayIndex)} · ${hover.hour}点：${hover.value}`;
+  }
+
+  /** 设置热力图悬停状态（鼠标/键盘聚焦）。 */
+  function onHeatHover(weekdayIndex: number, hour: number, value: number): void {
+    heatHover = { weekdayIndex, hour, value };
+  }
+
+  /** 清理热力图悬停状态（鼠标离开整个热力图/焦点离开热力图时触发）。 */
+  function clearHeatHover(): void {
+    heatHover = null;
+  }
+
+  /** 当焦点离开热力图容器时清理悬停状态（避免在格子间切换导致反复闪动）。 */
+  function onHeatmapFocusOut(e: FocusEvent): void {
+    const next = e.relatedTarget;
+    if (!(next instanceof Node)) {
+      clearHeatHover();
+      return;
+    }
+    if (!e.currentTarget) return;
+    if (e.currentTarget instanceof HTMLElement && !e.currentTarget.contains(next)) clearHeatHover();
+  }
 </script>
 
 {#if props.loading}
@@ -139,19 +171,39 @@
 
     <div class="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
       <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">周/小时热力图</div>
+      <div class="mb-2 flex items-center justify-between gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+        <div class="shrink-0">纵轴：星期 · 横轴：小时（0-23）</div>
+        <div class="min-h-[14px] shrink-0 font-medium whitespace-nowrap text-zinc-800 tabular-nums dark:text-zinc-100">
+          {heatHoverText(heatHover)}
+        </div>
+      </div>
       <div class="overflow-auto">
-        <div class="grid grid-cols-[28px_repeat(24,10px)] gap-1">
-          {#each Array.from({ length: 7 }) as _, wi}
-            <div class="flex items-center justify-center text-[10px] text-zinc-500 dark:text-zinc-400">
-              周{weekdayLabel(wi)}
-            </div>
-            {#each props.analysis.weekdayHourCounts[wi] ?? Array.from({ length: 24 }).map(() => 0) as v, hi (hi)}
-              <div
-                class={"h-3 w-3 rounded " + heatClass(v, heatMax)}
-                title={`周${weekdayLabel(wi)} ${hi}点：${v}`}
-              ></div>
+        <div class="inline-block" onpointerleave={clearHeatHover} onfocusout={onHeatmapFocusOut}>
+          <div class="grid grid-cols-[28px_repeat(24,10px)] gap-1">
+            {#each Array.from({ length: 7 }) as _, wi}
+              <div class="flex items-center justify-center text-[10px] text-zinc-500 dark:text-zinc-400">
+                周{weekdayLabel(wi)}
+              </div>
+              {#each props.analysis.weekdayHourCounts[wi] ?? Array.from({ length: 24 }).map(() => 0) as v, hi (hi)}
+                <button
+                  type="button"
+                  class={"h-3 w-3 rounded focus:outline-none " + heatClass(v, heatMax)}
+                  title={`周${weekdayLabel(wi)} ${hi}点：${v}`}
+                  aria-label={`周${weekdayLabel(wi)} ${hi}点：${v}`}
+                  onpointerenter={() => onHeatHover(wi, hi, v)}
+                  onfocus={() => onHeatHover(wi, hi, v)}
+                ></button>
+              {/each}
             {/each}
-          {/each}
+          </div>
+
+          <div class="mt-2 pl-[28px]">
+            <div class="grid grid-cols-[repeat(24,10px)] gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+              {#each hourTicks as h (h)}
+                <div class="leading-none" style={`grid-column:${h + 1};`}>{h}</div>
+              {/each}
+            </div>
+          </div>
         </div>
       </div>
     </div>

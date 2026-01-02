@@ -14,6 +14,10 @@ const MENU_START_ID: &str = "tray.start";
 const MENU_PAUSE_ID: &str = "tray.pause";
 /// 托盘菜单项 id：显示窗口。
 const MENU_SHOW_ID: &str = "tray.show";
+/// 托盘菜单项 id：进入迷你模式。
+const MENU_MINI_ON_ID: &str = "tray.mini_on";
+/// 托盘菜单项 id：退出迷你模式。
+const MENU_MINI_OFF_ID: &str = "tray.mini_off";
 /// 托盘菜单项 id：退出。
 const MENU_QUIT_ID: &str = "tray.quit";
 
@@ -26,6 +30,10 @@ pub struct TrayHandles {
     pub start_item: MenuItem<tauri::Wry>,
     /// “暂停”菜单项。
     pub pause_item: MenuItem<tauri::Wry>,
+    /// “进入迷你模式”菜单项。
+    pub mini_on_item: MenuItem<tauri::Wry>,
+    /// “退出迷你模式”菜单项。
+    pub mini_off_item: MenuItem<tauri::Wry>,
 }
 
 /// 创建托盘与菜单，并写入 `AppState`。
@@ -33,13 +41,35 @@ pub fn setup_tray(app: &mut tauri::App) -> AppResult<()> {
     let state = app.state::<AppState>();
     let snapshot = state.timer_snapshot();
     let initial_text = format_mm_ss(snapshot.remaining_seconds);
+    let window_mode = state.window_mode_snapshot();
 
     let menu = Menu::new(app)?;
     let start_item = MenuItem::with_id(app, MENU_START_ID, "开始", true, None::<&str>)?;
     let pause_item = MenuItem::with_id(app, MENU_PAUSE_ID, "暂停", true, None::<&str>)?;
     let show_item = MenuItem::with_id(app, MENU_SHOW_ID, "显示窗口", true, None::<&str>)?;
+    let mini_on_item = MenuItem::with_id(
+        app,
+        MENU_MINI_ON_ID,
+        "进入迷你模式",
+        !window_mode.mini_mode,
+        None::<&str>,
+    )?;
+    let mini_off_item = MenuItem::with_id(
+        app,
+        MENU_MINI_OFF_ID,
+        "退出迷你模式",
+        window_mode.mini_mode,
+        None::<&str>,
+    )?;
     let quit_item = MenuItem::with_id(app, MENU_QUIT_ID, "退出", true, None::<&str>)?;
-    menu.append_items(&[&start_item, &pause_item, &show_item, &quit_item])?;
+    menu.append_items(&[
+        &start_item,
+        &pause_item,
+        &show_item,
+        &mini_on_item,
+        &mini_off_item,
+        &quit_item,
+    ])?;
 
     let initial_icon = build_tray_icon_rgba(&initial_text, snapshot.phase, snapshot.is_running)?;
     let tray = TrayIconBuilder::new()
@@ -64,6 +94,12 @@ pub fn setup_tray(app: &mut tauri::App) -> AppResult<()> {
                         let _ = window.show();
                         let _ = window.set_focus();
                     }
+                }
+                MENU_MINI_ON_ID => {
+                    let _ = crate::ipc::window::set_mini_mode_inner(app_handle, &state, true);
+                }
+                MENU_MINI_OFF_ID => {
+                    let _ = crate::ipc::window::set_mini_mode_inner(app_handle, &state, false);
                 }
                 MENU_QUIT_ID => {
                     let _ = state.record_quit_interruption_before_exit();
@@ -96,6 +132,8 @@ pub fn setup_tray(app: &mut tauri::App) -> AppResult<()> {
         tray: tray.clone(),
         start_item: start_item.clone(),
         pause_item: pause_item.clone(),
+        mini_on_item: mini_on_item.clone(),
+        mini_off_item: mini_off_item.clone(),
     });
 
     let _ = refresh_tray(&state);
@@ -108,6 +146,7 @@ pub fn refresh_tray(state: &AppState) -> AppResult<()> {
         return Ok(());
     };
     let snapshot = state.timer_snapshot();
+    let window_mode = state.window_mode_snapshot();
 
     let text = format_mm_ss(snapshot.remaining_seconds);
     let rgba = build_tray_icon_rgba(&text, snapshot.phase, snapshot.is_running)?;
@@ -118,6 +157,8 @@ pub fn refresh_tray(state: &AppState) -> AppResult<()> {
     // 启用状态：运行中只能暂停；未运行只能开始。
     let _ = handles.start_item.set_enabled(!snapshot.is_running);
     let _ = handles.pause_item.set_enabled(snapshot.is_running);
+    let _ = handles.mini_on_item.set_enabled(!window_mode.mini_mode);
+    let _ = handles.mini_off_item.set_enabled(window_mode.mini_mode);
 
     Ok(())
 }

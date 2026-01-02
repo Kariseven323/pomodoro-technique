@@ -12,6 +12,7 @@ use crate::state::AppState;
 /// 获取应用完整快照（用于前端首屏渲染与恢复）。
 #[tauri::command]
 pub fn get_app_snapshot(state: tauri::State<'_, AppState>) -> Result<AppSnapshot, String> {
+    tracing::info!(target: "ipc", "get_app_snapshot called");
     to_ipc_result(Ok(AppSnapshot {
         data: state.data_snapshot(),
         timer: state.timer_snapshot(),
@@ -21,12 +22,14 @@ pub fn get_app_snapshot(state: tauri::State<'_, AppState>) -> Result<AppSnapshot
 /// 获取应用数据根目录路径（统一入口，便于用户一处查看与备份）。
 #[tauri::command]
 pub fn get_store_paths(app: tauri::AppHandle) -> Result<StorePaths, String> {
+    tracing::info!(target: "ipc", "get_store_paths called");
     to_ipc_result(get_store_paths_impl(&app))
 }
 
 /// 打开应用数据根目录（文件管理器，统一入口）。
 #[tauri::command]
 pub fn open_store_dir(app: tauri::AppHandle) -> Result<(), String> {
+    tracing::info!(target: "ipc", "open_store_dir called");
     to_ipc_result(open_store_dir_impl(&app))
 }
 

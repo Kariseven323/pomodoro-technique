@@ -170,7 +170,9 @@ fn audio_import_impl(state: &AppState, file_path: String, name: String) -> AppRe
         data.custom_audios.push(item.clone());
         Ok(data.custom_audios.clone())
     })?;
-    let _ = state.audio_controller().update_custom_audios(custom_audios.clone());
+    let _ = state
+        .audio_controller()
+        .update_custom_audios(custom_audios.clone());
     let _ = state.emit_audio_library_changed(custom_audios);
     let _ = state.emit_timer_snapshot();
 
@@ -215,7 +217,9 @@ fn audio_delete_impl(state: &AppState, audio_id: String) -> AppResult<bool> {
     );
     let _ = std::fs::remove_file(&path);
 
-    let _ = state.audio_controller().update_custom_audios(custom_audios.clone());
+    let _ = state
+        .audio_controller()
+        .update_custom_audios(custom_audios.clone());
     let _ = state.emit_audio_library_changed(custom_audios);
     // 若删除了当前选中的音效，则尽量暂停并触发一次同步，避免解码/自动播放状态异常。
     if should_fallback {
