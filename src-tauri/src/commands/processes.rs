@@ -1,24 +1,9 @@
 //! 进程相关命令：列举进程、提权重启等。
 
 use crate::errors::{AppError, AppResult};
-use crate::processes::{self, ProcessInfo};
-
-use super::common::to_ipc_result;
-
-/// 获取当前运行的进程列表（进程名 + 图标）。
-#[tauri::command]
-pub fn list_processes() -> Result<Vec<ProcessInfo>, String> {
-    to_ipc_result(processes::list_processes())
-}
-
-/// Windows：以管理员身份重启（用于终止需要提权的进程）。
-#[tauri::command]
-pub fn restart_as_admin() -> Result<(), String> {
-    to_ipc_result(restart_as_admin_impl())
-}
 
 /// 提权重启的内部实现（便于统一错误处理）。
-fn restart_as_admin_impl() -> AppResult<()> {
+pub(crate) fn restart_as_admin_impl() -> AppResult<()> {
     #[cfg(windows)]
     {
         restart_as_admin_windows()
@@ -80,4 +65,19 @@ fn to_wide_null(s: &str) -> Vec<u16> {
         .encode_wide()
         .chain(Some(0))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `restart_as_admin_impl`：非 Windows 平台应返回“不支持平台”错误。
+    #[test]
+    fn restart_as_admin_is_unsupported_on_non_windows() {
+        #[cfg(not(windows))]
+        {
+            let err = restart_as_admin_impl().unwrap_err();
+            assert!(matches!(err, AppError::UnsupportedPlatform(_)));
+        }
+    }
 }

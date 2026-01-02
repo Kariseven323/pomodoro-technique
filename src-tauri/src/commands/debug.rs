@@ -2,30 +2,14 @@
 
 use crate::app_data::{HistoryDay, HistoryRecord, Phase, Settings};
 use crate::errors::{AppError, AppResult};
-use crate::state::AppState;
-
-use super::common::to_ipc_result;
+use super::state_like::CommandState;
 
 /// 向前端广播“调试历史数据变更”的事件名（用于自动刷新历史页面）。
 pub const EVENT_HISTORY_DEV_CHANGED: &str = "pomodoro://history_dev_changed";
 
-/// 开发者命令：一键生成测试历史数据并写入 `history_dev`（仅开发环境可用）。
-#[tauri::command]
-pub fn debug_generate_history(state: tauri::State<'_, AppState>, days: u32) -> Result<u32, String> {
-    to_ipc_result(debug_generate_history_impl(&state, days))
-}
-
-/// 开发者命令：清空 `history_dev`（仅开发环境可用）。
-#[tauri::command]
-pub fn debug_clear_history(state: tauri::State<'_, AppState>) -> Result<bool, String> {
-    to_ipc_result(debug_clear_history_impl(&state))
-}
-
 /// 生成调试历史数据的内部实现：校验参数、写入 store、并通知前端刷新。
-fn debug_generate_history_impl(state: &AppState, days: u32) -> AppResult<u32> {
-    if !cfg!(debug_assertions) {
-        return Err(AppError::Validation("仅开发环境可使用调试模式".to_string()));
-    }
+#[cfg(debug_assertions)]
+pub(crate) fn debug_generate_history_impl<S: CommandState>(state: &S, days: u32) -> AppResult<u32> {
     if !(1..=365).contains(&days) {
         return Err(AppError::Validation("天数需在 1-365".to_string()));
     }
@@ -51,12 +35,15 @@ fn debug_generate_history_impl(state: &AppState, days: u32) -> AppResult<u32> {
     Ok(generated)
 }
 
-/// 清除调试历史数据的内部实现：清空 `history_dev` 并通知前端刷新。
-fn debug_clear_history_impl(state: &AppState) -> AppResult<bool> {
-    if !cfg!(debug_assertions) {
-        return Err(AppError::Validation("仅开发环境可使用调试模式".to_string()));
-    }
+/// 生成调试历史数据的内部实现：非开发环境直接拒绝（避免 release 包携带调试功能）。
+#[cfg(not(debug_assertions))]
+pub(crate) fn debug_generate_history_impl<S: CommandState>(_state: &S, _days: u32) -> AppResult<u32> {
+    Err(AppError::Validation("仅开发环境可使用调试模式".to_string()))
+}
 
+/// 清除调试历史数据的内部实现：清空 `history_dev` 并通知前端刷新。
+#[cfg(debug_assertions)]
+pub(crate) fn debug_clear_history_impl<S: CommandState>(state: &S) -> AppResult<bool> {
     state.update_data(|data| {
         data.history_dev = Vec::new();
         Ok(())
@@ -65,6 +52,12 @@ fn debug_clear_history_impl(state: &AppState) -> AppResult<bool> {
     tracing::info!(target: "storage", "已清除测试历史数据（history_dev）");
     let _ = state.emit_simple_event(EVENT_HISTORY_DEV_CHANGED);
     Ok(true)
+}
+
+/// 清除调试历史数据的内部实现：非开发环境直接拒绝（避免 release 包携带调试功能）。
+#[cfg(not(debug_assertions))]
+pub(crate) fn debug_clear_history_impl<S: CommandState>(_state: &S) -> AppResult<bool> {
+    Err(AppError::Validation("仅开发环境可使用调试模式".to_string()))
 }
 
 /// 生成 `history_dev`：返回按日分组的历史与生成的记录总数。
@@ -160,4 +153,76 @@ fn minutes_to_hhmm(total_minutes: u32) -> String {
     let hh = (total_minutes / 60) % 24;
     let mm = total_minutes % 60;
     format!("{:02}:{:02}", hh, mm)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use rand::SeedableRng as _;
+
+    use crate::app_data::AppData;
+    use crate::commands::state_like::TestState;
+
+    /// `minutes_to_hhmm`：应正确补零并按 24 小时制取模。
+    #[test]
+    fn minutes_to_hhmm_formats_correctly() {
+        assert_eq!(minutes_to_hhmm(0), "00:00");
+        assert_eq!(minutes_to_hhmm(9 * 60 + 5), "09:05");
+        assert_eq!(minutes_to_hhmm(23 * 60 + 59), "23:59");
+        assert_eq!(minutes_to_hhmm(24 * 60), "00:00");
+    }
+
+    /// `pick_random_tag`：空列表时应回退为“工作”。
+    #[test]
+    fn pick_random_tag_falls_back_when_empty() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let out = pick_random_tag(&mut rng, &[]);
+        assert_eq!(out, "工作");
+    }
+
+    /// `generate_history_dev`：应生成指定天数的数据并返回记录总数。
+    #[test]
+    fn generate_history_dev_generates_days_and_counts() {
+        let settings = Settings::default();
+        let tags = vec!["A".to_string(), "B".to_string()];
+        let (days, total) = generate_history_dev(5, &settings, &tags);
+        assert_eq!(days.len() as u32, 5);
+        assert!(total > 0);
+        assert!(days.iter().all(|d| !d.records.is_empty()));
+    }
+
+    /// `debug_generate_history_impl`：应写入 `history_dev` 并触发刷新事件。
+    #[test]
+    fn debug_generate_history_writes_and_emits() {
+        let state = TestState::new(AppData::default());
+        let count = debug_generate_history_impl(&state, 7).unwrap();
+        assert!(count > 0);
+        assert!(!state.data_snapshot().history_dev.is_empty());
+        assert!(state.take_events().iter().any(|e| e == EVENT_HISTORY_DEV_CHANGED));
+    }
+
+    /// `debug_clear_history_impl`：应清空 `history_dev` 并触发刷新事件。
+    #[test]
+    fn debug_clear_history_clears_and_emits() {
+        let mut data = AppData::default();
+        data.history_dev = vec![HistoryDay {
+            date: "2025-01-01".to_string(),
+            records: Vec::new(),
+        }];
+        let state = TestState::new(data);
+
+        let ok = debug_clear_history_impl(&state).unwrap();
+        assert!(ok);
+        assert!(state.data_snapshot().history_dev.is_empty());
+        assert!(state.take_events().iter().any(|e| e == EVENT_HISTORY_DEV_CHANGED));
+    }
+
+    /// `debug_generate_history_impl`：非法天数范围应返回校验错误。
+    #[test]
+    fn debug_generate_history_rejects_invalid_days() {
+        let state = TestState::new(AppData::default());
+        let err = debug_generate_history_impl(&state, 0).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
 }

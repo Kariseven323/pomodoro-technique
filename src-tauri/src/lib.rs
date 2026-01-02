@@ -7,24 +7,36 @@ mod commands;
 mod errors;
 mod logging;
 mod processes;
+#[cfg(not(test))]
 mod state;
 mod timer;
+#[cfg(not(test))]
+mod ipc;
+#[cfg(not(test))]
 mod tray;
 pub mod typegen;
 
-use std::time::Duration;
-
-use tauri::Manager as _;
-use tauri_plugin_store::StoreExt;
-
 use crate::app_data::{AppData, STORE_FILE_NAME, STORE_KEY};
 use crate::errors::{AppError, AppResult};
+
+#[cfg(not(test))]
+use std::time::Duration;
+
+#[cfg(not(test))]
+use tauri::Manager as _;
+#[cfg(not(test))]
+use tauri_plugin_store::StoreExt;
+
+#[cfg(not(test))]
 use crate::state::AppState;
+#[cfg(not(test))]
 use crate::timer::spawn_timer_task;
+#[cfg(not(test))]
 use crate::tray::setup_tray;
 
 /// 应用运行入口（由 `src-tauri/src/main.rs` 调用）。
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(not(test))]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -59,41 +71,42 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::app::get_app_snapshot,
-            commands::app::get_store_paths,
-            commands::app::open_store_dir,
-            commands::settings::update_settings,
-            commands::settings::set_goals,
-            commands::tags::set_current_tag,
-            commands::tags::add_tag,
-            commands::blacklist::set_blacklist,
-            commands::history::get_history,
-            commands::history::set_history_remark,
-            commands::analysis::get_focus_analysis,
-            commands::templates::get_templates,
-            commands::templates::save_template,
-            commands::templates::delete_template,
-            commands::templates::apply_template,
-            commands::window::set_always_on_top,
-            commands::window::set_mini_mode,
-            commands::export::export_history,
-            commands::logging::open_log_dir,
-            commands::logging::frontend_log,
-            commands::debug::debug_generate_history,
-            commands::debug::debug_clear_history,
-            commands::window::exit_app,
-            commands::processes::list_processes,
-            commands::timer::timer_start,
-            commands::timer::timer_pause,
-            commands::timer::timer_reset,
-            commands::timer::timer_skip,
-            commands::processes::restart_as_admin
+            ipc::app::get_app_snapshot,
+            ipc::app::get_store_paths,
+            ipc::app::open_store_dir,
+            ipc::settings::update_settings,
+            ipc::settings::set_goals,
+            ipc::tags::set_current_tag,
+            ipc::tags::add_tag,
+            ipc::blacklist::set_blacklist,
+            ipc::history::get_history,
+            ipc::history::set_history_remark,
+            ipc::analysis::get_focus_analysis,
+            ipc::templates::get_templates,
+            ipc::templates::save_template,
+            ipc::templates::delete_template,
+            ipc::templates::apply_template,
+            ipc::window::set_always_on_top,
+            ipc::window::set_mini_mode,
+            ipc::export::export_history,
+            ipc::logging::open_log_dir,
+            ipc::logging::frontend_log,
+            ipc::debug::debug_generate_history,
+            ipc::debug::debug_clear_history,
+            ipc::window::exit_app,
+            ipc::processes::list_processes,
+            ipc::timer::timer_start,
+            ipc::timer::timer_pause,
+            ipc::timer::timer_reset,
+            ipc::timer::timer_skip,
+            ipc::processes::restart_as_admin
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
 /// 将相对 `BaseDirectory::AppData` 的路径解析为真实磁盘路径（用于兼容迁移）。
+#[cfg(not(test))]
 fn resolve_path_in_app_data(app: &tauri::AppHandle, path: &str) -> AppResult<std::path::PathBuf> {
     use tauri::path::BaseDirectory;
     use tauri::Manager as _;
@@ -104,6 +117,7 @@ fn resolve_path_in_app_data(app: &tauri::AppHandle, path: &str) -> AppResult<std
 }
 
 /// 启动迁移：将旧位置/误位置的 store 文件搬到“统一入口”根目录下的 `data/`（仅在新文件不存在时执行）。
+#[cfg(not(test))]
 fn migrate_legacy_store_file(app: &tauri::AppHandle) -> AppResult<()> {
     let target = app_paths::store_file_path(app)?;
     if target.exists() {
@@ -163,6 +177,7 @@ fn migrate_legacy_store_file(app: &tauri::AppHandle) -> AppResult<()> {
 }
 
 /// 从 store 中加载 `AppData`；若为空则写入默认值并返回。
+#[cfg(not(test))]
 fn load_or_init_app_data(store: &tauri_plugin_store::Store<tauri::Wry>) -> AppResult<AppData> {
     if let Some(value) = store.get(STORE_KEY) {
         let mut data: AppData = serde_json::from_value(value)?;
@@ -183,6 +198,7 @@ fn load_or_init_app_data(store: &tauri_plugin_store::Store<tauri::Wry>) -> AppRe
 }
 
 /// 将窗口关闭行为改为“隐藏到托盘”（满足 PRD 的“最小化到托盘”）。
+#[cfg(not(test))]
 fn setup_window_close_to_tray(app: &mut tauri::App) -> AppResult<()> {
     use tauri::Manager as _;
     use tauri::WindowEvent;

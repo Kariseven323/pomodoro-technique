@@ -3851,6 +3851,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-store",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

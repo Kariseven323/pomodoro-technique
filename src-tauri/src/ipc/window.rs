@@ -1,11 +1,11 @@
-//! 窗口相关命令：置顶、迷你模式、退出等。
+//! 窗口相关 IPC 命令：置顶、迷你模式、退出等（UI 边界）。
 
 use tauri::{LogicalPosition, LogicalSize, Manager as _};
 
 use crate::errors::{AppError, AppResult};
 use crate::state::AppState;
 
-use super::common::to_ipc_result;
+use crate::commands::common::to_ipc_result;
 
 /// 设置主窗口置顶状态（并持久化到 settings）。
 #[tauri::command]
@@ -18,11 +18,7 @@ pub fn set_always_on_top(
 }
 
 /// 设置置顶的内部实现：修改窗口并写入 settings。
-fn set_always_on_top_impl(
-    app: &tauri::AppHandle,
-    state: &AppState,
-    enabled: bool,
-) -> AppResult<bool> {
+fn set_always_on_top_impl(app: &tauri::AppHandle, state: &AppState, enabled: bool) -> AppResult<bool> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| AppError::Invariant("主窗口 `main` 不存在".to_string()))?;
@@ -109,3 +105,4 @@ fn exit_app_impl(app: &tauri::AppHandle) -> AppResult<bool> {
     app.exit(0);
     Ok(true)
 }
+

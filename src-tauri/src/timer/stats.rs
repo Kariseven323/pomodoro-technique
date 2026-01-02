@@ -181,4 +181,58 @@ mod tests {
         assert_eq!(out.total, 3);
         assert_eq!(out.by_tag, vec![TagCount { tag: "A".to_string(), count: 2 }, TagCount { tag: "B".to_string(), count: 1 }]);
     }
+
+    /// `compute_today_stats`：当指定日期不存在时应返回 0 与空分组。
+    #[test]
+    fn compute_today_stats_returns_zero_when_missing_day() {
+        let data = AppData {
+            history: vec![HistoryDay {
+                date: "2025-01-01".to_string(),
+                records: vec![record("A", Phase::Work)],
+            }],
+            ..AppData::default()
+        };
+
+        let out = compute_today_stats(&data, "2025-01-02");
+        assert_eq!(out.total, 0);
+        assert!(out.by_tag.is_empty());
+    }
+
+    /// `compute_week_stats`：应包含闭区间边界日期（from/to 当天）。
+    #[test]
+    fn compute_week_stats_includes_boundary_days() {
+        let data = AppData {
+            history: vec![
+                HistoryDay {
+                    date: "2025-01-01".to_string(),
+                    records: vec![record("A", Phase::Work)],
+                },
+                HistoryDay {
+                    date: "2025-01-07".to_string(),
+                    records: vec![record("B", Phase::Work)],
+                },
+                HistoryDay {
+                    date: "2025-01-08".to_string(),
+                    records: vec![record("C", Phase::Work)],
+                },
+            ],
+            ..AppData::default()
+        };
+
+        let out = compute_week_stats(&data, "2025-01-01", "2025-01-07");
+        assert_eq!(out.total, 2);
+        assert_eq!(
+            out.by_tag,
+            vec![
+                TagCount {
+                    tag: "A".to_string(),
+                    count: 1
+                },
+                TagCount {
+                    tag: "B".to_string(),
+                    count: 1
+                }
+            ]
+        );
+    }
 }

@@ -12,10 +12,13 @@ pub use validation::validate_settings;
 
 use std::time::Duration;
 
+#[cfg(not(test))]
 use tokio::time::sleep;
 
+#[cfg(not(test))]
 use tauri::Manager as _;
 
+#[cfg(not(test))]
 use crate::state::AppState;
 
 /// 向前端广播计时器状态的事件名。
@@ -25,6 +28,7 @@ pub const EVENT_SNAPSHOT: &str = "pomodoro://snapshot";
 pub const EVENT_WORK_COMPLETED: &str = "pomodoro://work_completed";
 
 /// 启动后台 tick 任务：每秒更新计时器、推送事件与刷新托盘。
+#[cfg(not(test))]
 pub fn spawn_timer_task(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {

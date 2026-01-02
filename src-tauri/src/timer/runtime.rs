@@ -34,18 +34,9 @@ impl TimerClock for SystemClock {
 
     /// 获取本周日期范围（周一为起始），返回 `(from, to)`（YYYY-MM-DD）。
     fn current_week_range(&self) -> (String, String) {
-        use chrono::{Datelike as _, Duration as ChronoDuration, Weekday};
+        use chrono::{Datelike as _, Duration as ChronoDuration};
         let today = chrono::Local::now().date_naive();
-        let weekday = today.weekday();
-        let offset_days = match weekday {
-            Weekday::Mon => 0,
-            Weekday::Tue => 1,
-            Weekday::Wed => 2,
-            Weekday::Thu => 3,
-            Weekday::Fri => 4,
-            Weekday::Sat => 5,
-            Weekday::Sun => 6,
-        };
+        let offset_days = i64::from(today.weekday().num_days_from_monday());
         let from = today - ChronoDuration::days(offset_days);
         let to = from + ChronoDuration::days(6);
         (
@@ -408,6 +399,12 @@ impl TimerRuntime {
         }
         self
     }
+
+    /// 测试辅助：读取工作阶段启动的日期/时间（仅用于覆盖迁移防御逻辑）。
+    #[cfg(test)]
+    pub(crate) fn debug_work_started_at(&self) -> (Option<String>, Option<String>) {
+        (self.work_started_date.clone(), self.work_started_time.clone())
+    }
 }
 
 impl Default for TimerRuntime {
@@ -466,6 +463,19 @@ fn ensure_day<'a>(history: &'a mut Vec<HistoryDay>, date: &str) -> &'a mut Histo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::Once;
+
+    /// 初始化 `tracing`（仅一次）：确保 `tracing::info!` 的字段参数会被求值，便于覆盖率统计。
+    fn init_tracing_once() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let _ = tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::INFO)
+                .with_test_writer()
+                .try_init();
+        });
+    }
 
     /// 固定时间源：用于让单元测试在任意时间运行都可复现。
     struct FixedClock {
@@ -547,6 +557,78 @@ mod tests {
         assert_eq!(runtime.remaining_seconds, (data.settings.short_break as u64) * 60);
         assert_eq!(data.history.len(), 1);
         assert_eq!(data.history[0].records.len(), 1);
+    }
+
+    /// `tick`：在启用 tracing 时应走到 info 日志分支（用于覆盖日志字段求值逻辑）。
+    #[test]
+    fn tick_phase_end_hits_tracing_info_when_enabled() {
+        init_tracing_once();
+
+        let clock = FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
+        let notifier = NoopNotifier;
+
+        let mut data = AppData::default();
+        data.settings.pomodoro = 1;
+        data.settings.short_break = 1;
+        data.tags = vec!["学习".to_string()];
+
+        let mut runtime = TimerRuntime::new(&data.settings, &data.tags, &clock);
+        runtime.start(&data.settings, &clock);
+        runtime.remaining_seconds = 1;
+
+        let out = runtime.tick(&mut data, &clock, &notifier).unwrap();
+        assert!(out.phase_ended);
+    }
+
+    /// `tick`：未运行状态应直接返回“无变化”，且不修改剩余时间。
+    #[test]
+    fn tick_is_noop_when_not_running() {
+        let clock = FixedClock::new("2025-01-01", "09:00");
+        let notifier = NoopNotifier;
+        let mut data = AppData::default();
+
+        let mut runtime = TimerRuntime::new(&data.settings, &data.tags, &clock);
+        runtime.remaining_seconds = 10;
+        runtime.is_running = false;
+
+        let out = runtime.tick(&mut data, &clock, &notifier).unwrap();
+        assert!(!out.history_changed);
+        assert!(!out.phase_ended);
+        assert!(!out.work_auto_started);
+        assert!(out.work_completed_event.is_none());
+        assert_eq!(runtime.remaining_seconds, 10);
+    }
+
+    /// `tick`：运行中且剩余时间未归零时应仅递减秒数，不触发阶段结束。
+    #[test]
+    fn tick_decrements_without_ending_phase() {
+        let clock = FixedClock::new("2025-01-01", "09:00");
+        let notifier = NoopNotifier;
+        let mut data = AppData::default();
+
+        let mut runtime = TimerRuntime::new(&data.settings, &data.tags, &clock);
+        runtime.start(&data.settings, &clock);
+        runtime.remaining_seconds = 2;
+
+        let out = runtime.tick(&mut data, &clock, &notifier).unwrap();
+        assert!(!out.history_changed);
+        assert!(!out.phase_ended);
+        assert_eq!(runtime.remaining_seconds, 1);
+    }
+
+    /// `with_normalized_tag`：运行中且缺失开始时间时应自动补齐（用于中途迁移/恢复的防御逻辑）。
+    #[test]
+    fn with_normalized_tag_fills_started_at_when_running() {
+        let clock = FixedClock::new("2025-01-01", "09:00");
+        let mut runtime = TimerRuntime::default();
+        runtime.phase = Phase::Work;
+        runtime.is_running = true;
+        runtime.current_tag = "学习".to_string();
+
+        runtime = runtime.with_normalized_tag(&clock);
+        let (date, time) = runtime.debug_work_started_at();
+        assert_eq!(date.as_deref(), Some("2025-01-01"));
+        assert_eq!(time.as_deref(), Some("09:00"));
     }
 
     /// 当今日完成数达到长休息间隔倍数时，应进入长休息阶段。
@@ -636,5 +718,145 @@ mod tests {
         assert!(out.work_auto_started);
         assert_eq!(runtime.phase, Phase::Work);
         assert!(runtime.is_running);
+    }
+
+    /// `TimerRuntime::new`：应初始化为工作阶段、剩余时间与默认标签（空标签列表回退为“工作”）。
+    #[test]
+    fn timer_runtime_new_initializes_with_defaults_and_tag_fallback() {
+        let clock = FixedClock::new("2025-01-01", "09:00");
+        let settings = Settings {
+            pomodoro: 25,
+            ..Settings::default()
+        };
+
+        let runtime = TimerRuntime::new(&settings, &[], &clock);
+        assert_eq!(runtime.phase, Phase::Work);
+        assert_eq!(runtime.remaining_seconds, 25 * 60);
+        assert!(!runtime.is_running);
+        assert_eq!(runtime.current_tag, "工作");
+        assert!(!runtime.blacklist_locked());
+    }
+
+    /// `start`：重复启动应幂等，并在工作阶段首次启动时锁定黑名单。
+    #[test]
+    fn start_is_idempotent_and_locks_blacklist_on_first_work_start() {
+        let clock = FixedClock::new("2025-01-01", "09:00");
+        let mut runtime = TimerRuntime::new(&Settings::default(), &["学习".to_string()], &clock);
+
+        runtime.start(&Settings::default(), &clock);
+        assert!(runtime.is_running);
+        assert!(runtime.blacklist_locked());
+
+        runtime.start(&Settings::default(), &clock);
+        assert!(runtime.is_running);
+        assert!(runtime.blacklist_locked());
+    }
+
+    /// `pause`：暂停后应处于非运行态。
+    #[test]
+    fn pause_stops_running() {
+        let clock = FixedClock::new("2025-01-01", "09:00");
+        let mut runtime = TimerRuntime::new(&Settings::default(), &["学习".to_string()], &clock);
+        runtime.start(&Settings::default(), &clock);
+        runtime.pause();
+        assert!(!runtime.is_running);
+    }
+
+    /// `reset`：应回到工作阶段初始剩余时间，并解除锁定与运行态。
+    #[test]
+    fn reset_restores_initial_state() {
+        let clock = FixedClock::new("2025-01-01", "09:00");
+        let mut settings = Settings::default();
+        settings.pomodoro = 10;
+        settings.short_break = 1;
+        settings.long_break = 1;
+
+        let mut runtime = TimerRuntime::new(&settings, &["学习".to_string()], &clock);
+        runtime.start(&settings, &clock);
+        runtime.remaining_seconds = 3;
+        assert!(runtime.blacklist_locked());
+
+        runtime.reset(&settings);
+        assert_eq!(runtime.phase, Phase::Work);
+        assert_eq!(runtime.remaining_seconds, 10 * 60);
+        assert!(!runtime.is_running);
+        assert!(!runtime.blacklist_locked());
+    }
+
+    /// `skip`：跳过不会写入历史（不依赖 data），并应切换到下一阶段且解除锁定。
+    #[test]
+    fn skip_switches_phase_and_unlocks_blacklist() {
+        let clock = FixedClock::new("2025-01-01", "09:00");
+        let mut settings = Settings::default();
+        settings.pomodoro = 1;
+        settings.short_break = 2;
+        settings.long_break = 3;
+        settings.long_break_interval = 4;
+
+        let mut runtime = TimerRuntime::new(&settings, &["学习".to_string()], &clock);
+        runtime.start(&settings, &clock);
+        assert!(runtime.blacklist_locked());
+
+        runtime.skip(&settings, 1);
+        assert_eq!(runtime.phase, Phase::ShortBreak);
+        assert_eq!(runtime.remaining_seconds, 2 * 60);
+        assert!(!runtime.is_running);
+        assert!(!runtime.blacklist_locked());
+    }
+
+    /// `set_current_tag`：空白标签应规范化为“工作”。
+    #[test]
+    fn set_current_tag_normalizes_blank_tag() {
+        let clock = FixedClock::new("2025-01-01", "09:00");
+        let mut runtime = TimerRuntime::new(&Settings::default(), &["学习".to_string()], &clock);
+        runtime.set_current_tag("   ".to_string(), &clock);
+        assert_eq!(runtime.current_tag, "工作");
+    }
+
+    /// `snapshot_with_clock`：快照应包含目标进度与今日/本周统计，并保留运行态字段。
+    #[test]
+    fn snapshot_with_clock_includes_stats_and_goal_progress() {
+        let clock = FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
+        let mut data = AppData::default();
+        data.settings.daily_goal = 3;
+        data.settings.weekly_goal = 10;
+        data.tags = vec!["学习".to_string()];
+        data.history = vec![HistoryDay {
+            date: "2025-01-01".to_string(),
+            records: vec![
+                HistoryRecord {
+                    tag: "学习".to_string(),
+                    start_time: "08:00".to_string(),
+                    end_time: Some("08:25".to_string()),
+                    duration: 25,
+                    phase: Phase::Work,
+                    remark: String::new(),
+                },
+                HistoryRecord {
+                    tag: "学习".to_string(),
+                    start_time: "08:30".to_string(),
+                    end_time: Some("08:55".to_string()),
+                    duration: 25,
+                    phase: Phase::ShortBreak,
+                    remark: String::new(),
+                },
+            ],
+        }];
+
+        let mut runtime = TimerRuntime::new(&data.settings, &data.tags, &clock);
+        runtime.start(&data.settings, &clock);
+
+        let snapshot = runtime.snapshot_with_clock(&data, &clock);
+        assert_eq!(snapshot.phase, Phase::Work);
+        assert!(snapshot.is_running);
+        assert_eq!(snapshot.current_tag, "学习");
+        assert!(snapshot.blacklist_locked);
+        assert_eq!(snapshot.settings.daily_goal, 3);
+        assert_eq!(snapshot.today_stats.total, 1);
+        assert_eq!(snapshot.week_stats.total, 1);
+        assert_eq!(snapshot.goal_progress.daily_goal, 3);
+        assert_eq!(snapshot.goal_progress.daily_completed, 1);
+        assert_eq!(snapshot.goal_progress.weekly_goal, 10);
+        assert_eq!(snapshot.goal_progress.weekly_completed, 1);
     }
 }

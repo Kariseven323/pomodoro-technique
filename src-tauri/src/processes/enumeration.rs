@@ -25,27 +25,59 @@ pub struct ProcessInfo {
     pub icon_data_url: Option<String>,
 }
 
+/// 内部用的“进程快照”条目（用于将 sysinfo 结果转为可测试的纯数据流）。
+#[derive(Debug, Clone)]
+struct ProcessEntry {
+    /// 进程名。
+    name: String,
+    /// PID。
+    pid: u32,
+    /// 可执行文件路径。
+    exe_path: Option<String>,
+}
+
 /// 获取当前运行进程列表（按进程名去重并按名称排序）。
 pub fn list_processes() -> AppResult<Vec<ProcessInfo>> {
     let mut system = System::new_all();
     system.refresh_all();
 
+    let entries = system.processes().iter().map(|(pid, process)| {
+        let exe_path = process.exe().and_then(normalize_sysinfo_exe_path);
+        ProcessEntry {
+            name: process.name().to_string(),
+            pid: pid.as_u32(),
+            exe_path,
+        }
+    });
+
+    Ok(list_processes_from_entries(entries))
+}
+
+/// 将 sysinfo 返回的 exe 路径规范化为可序列化字符串（空路径视为 None）。
+fn normalize_sysinfo_exe_path(path: &std::path::Path) -> Option<String> {
+    if path.as_os_str().is_empty() {
+        None
+    } else {
+        Some(path.to_string_lossy().to_string())
+    }
+}
+
+/// 将“进程快照”条目列表转为前端展示用 `ProcessInfo`（去重、排序、图标 best-effort）。
+fn list_processes_from_entries(entries: impl IntoIterator<Item = ProcessEntry>) -> Vec<ProcessInfo> {
     let mut by_name: BTreeMap<String, ProcessInfo> = BTreeMap::new();
 
-    for (pid, process) in system.processes() {
-        let name = process.name().to_string();
-        let pid_u32 = pid.as_u32();
-        let exe_path = process.exe().and_then(|p| {
-            if p.as_os_str().is_empty() {
+    for entry in entries {
+        let exe_path = entry.exe_path.and_then(|p| {
+            if p.trim().is_empty() {
                 None
             } else {
-                Some(p.to_string_lossy().to_string())
+                Some(p)
             }
         });
 
-        by_name.entry(name.clone()).or_insert_with(|| ProcessInfo {
-            name,
-            pid: pid_u32,
+        by_name.entry(entry.name.clone()).or_insert_with(|| ProcessInfo {
+            name: entry.name,
+            pid: entry.pid,
             exe_path: exe_path.clone(),
             icon_data_url: exe_path
                 .as_deref()
@@ -53,7 +85,7 @@ pub fn list_processes() -> AppResult<Vec<ProcessInfo>> {
         });
     }
 
-    Ok(by_name.into_values().collect())
+    by_name.into_values().collect()
 }
 
 /// 将可执行文件路径转为图标 data URL（失败时返回 `Ok(None)`）。
@@ -73,6 +105,87 @@ fn icon_data_url_best_effort(exe_path: &str) -> AppResult<Option<String>> {
     {
         let _ = exe_path;
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `list_processes_from_entries`：应按名称去重并按名称排序。
+    #[test]
+    fn list_processes_dedupes_and_sorts_by_name() {
+        let entries = vec![
+            ProcessEntry {
+                name: "b.exe".to_string(),
+                pid: 2,
+                exe_path: Some("/bin/b".to_string()),
+            },
+            ProcessEntry {
+                name: "a.exe".to_string(),
+                pid: 1,
+                exe_path: Some("/bin/a".to_string()),
+            },
+            // 重复名称：应保留第一次插入的 pid/exe_path
+            ProcessEntry {
+                name: "a.exe".to_string(),
+                pid: 999,
+                exe_path: Some("/bin/a2".to_string()),
+            },
+        ];
+
+        let out = list_processes_from_entries(entries);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].name, "a.exe");
+        assert_eq!(out[0].pid, 1);
+        assert_eq!(out[0].exe_path.as_deref(), Some("/bin/a"));
+        assert_eq!(out[1].name, "b.exe");
+    }
+
+    /// `list_processes_from_entries`：空 exe_path 应规范化为 None，避免 UI 展示异常。
+    #[test]
+    fn list_processes_normalizes_empty_exe_path() {
+        let entries = vec![ProcessEntry {
+            name: "a.exe".to_string(),
+            pid: 1,
+            exe_path: Some("".to_string()),
+        }];
+
+        let out = list_processes_from_entries(entries);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].exe_path.is_none());
+        #[cfg(not(windows))]
+        assert!(out[0].icon_data_url.is_none());
+    }
+
+    /// `icon_data_url_best_effort`：非 Windows 下应始终返回 Ok(None)。
+    #[test]
+    #[cfg(not(windows))]
+    fn icon_data_url_best_effort_returns_none_on_non_windows() {
+        let out = icon_data_url_best_effort("/bin/bash").unwrap();
+        assert!(out.is_none());
+    }
+
+    /// `list_processes`：应返回按名称排序且去重的结果（不依赖具体进程集合）。
+    #[test]
+    fn list_processes_returns_sorted_unique_names() {
+        let out = list_processes().unwrap();
+        for w in out.windows(2) {
+            assert!(w[0].name <= w[1].name);
+        }
+        let mut seen = std::collections::BTreeSet::<String>::new();
+        for p in &out {
+            assert!(seen.insert(p.name.clone()));
+            #[cfg(not(windows))]
+            assert!(p.icon_data_url.is_none());
+        }
+    }
+
+    /// `normalize_sysinfo_exe_path`：空路径应返回 None（与 sysinfo 行为对齐）。
+    #[test]
+    fn normalize_sysinfo_exe_path_handles_empty_path() {
+        let out = normalize_sysinfo_exe_path(std::path::Path::new(""));
+        assert!(out.is_none());
     }
 }
 

@@ -367,4 +367,69 @@ mod tests {
         assert!(changed);
         assert_eq!(data.active_template_id.as_deref(), Some("deep"));
     }
+
+    /// `Settings::default`：默认值应符合 PRD 约定（25/5/15/4 + 目标值）。
+    #[test]
+    fn settings_default_matches_prd() {
+        let s = Settings::default();
+        assert_eq!(s.pomodoro, 25);
+        assert_eq!(s.short_break, 5);
+        assert_eq!(s.long_break, 15);
+        assert_eq!(s.long_break_interval, 4);
+        assert_eq!(s.auto_continue_enabled, false);
+        assert_eq!(s.auto_continue_pomodoros, 4);
+        assert_eq!(s.daily_goal, 8);
+        assert_eq!(s.weekly_goal, 40);
+        assert_eq!(s.always_on_top, false);
+    }
+
+    /// `builtin_templates`：应包含固定的内置模板集合，且均标记为 builtin。
+    #[test]
+    fn builtin_templates_have_expected_ids_and_flags() {
+        let templates = builtin_templates();
+        assert!(templates.len() >= 3);
+        assert!(templates.iter().all(|t| t.builtin));
+
+        let ids: std::collections::BTreeSet<String> =
+            templates.iter().map(|t| t.id.clone()).collect();
+        assert_eq!(ids.len(), templates.len());
+        assert!(ids.contains("work"));
+        assert!(ids.contains("study"));
+        assert!(ids.contains("deep"));
+    }
+
+    /// `AppData::default`：应填充默认模板/默认激活模板，并回填默认黑名单与标签。
+    #[test]
+    fn app_data_default_initializes_templates_blacklist_and_tags() {
+        let data = AppData::default();
+
+        assert!(!data.blacklist_templates.is_empty());
+        assert_eq!(data.active_template_ids.first().map(|s| s.as_str()), Some("work"));
+        assert_eq!(data.active_template_id.as_deref(), Some("work"));
+
+        let work_template = data
+            .blacklist_templates
+            .iter()
+            .find(|t| t.id == "work")
+            .expect("work 模板必须存在");
+        assert_eq!(data.blacklist, work_template.processes);
+
+        assert_eq!(
+            data.tags,
+            vec!["工作".to_string(), "学习".to_string(), "阅读".to_string(), "写作".to_string()]
+        );
+        assert!(data.history.is_empty());
+    }
+
+    /// `Phase::default`：应回退为工作阶段（用于旧数据缺失字段时兼容）。
+    #[test]
+    fn phase_default_is_work() {
+        assert_eq!(Phase::default(), Phase::Work);
+    }
+
+    /// `default_auto_continue_pomodoros`：应返回 PRD 约定的默认连续番茄数量。
+    #[test]
+    fn default_auto_continue_pomodoros_matches_prd() {
+        assert_eq!(default_auto_continue_pomodoros(), 4);
+    }
 }

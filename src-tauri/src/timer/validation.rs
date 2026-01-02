@@ -85,6 +85,20 @@ mod tests {
         ));
         assert!(matches!(
             validate_settings(&Settings {
+                long_break: 0,
+                ..Settings::default()
+            }),
+            Err(AppError::Validation(_))
+        ));
+        assert!(matches!(
+            validate_settings(&Settings {
+                long_break: 61,
+                ..Settings::default()
+            }),
+            Err(AppError::Validation(_))
+        ));
+        assert!(matches!(
+            validate_settings(&Settings {
                 long_break_interval: 0,
                 ..Settings::default()
             }),
@@ -93,6 +107,44 @@ mod tests {
         assert!(matches!(
             validate_settings(&Settings {
                 long_break_interval: 11,
+                ..Settings::default()
+            }),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    /// 校验：连续番茄数量超出范围应失败。
+    #[test]
+    fn validate_settings_rejects_auto_continue_pomodoros_out_of_range() {
+        assert!(matches!(
+            validate_settings(&Settings {
+                auto_continue_pomodoros: 0,
+                ..Settings::default()
+            }),
+            Err(AppError::Validation(_))
+        ));
+        assert!(matches!(
+            validate_settings(&Settings {
+                auto_continue_pomodoros: 21,
+                ..Settings::default()
+            }),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    /// 校验：每日/每周目标过大应失败（用于防御性约束）。
+    #[test]
+    fn validate_settings_rejects_excessive_goals() {
+        assert!(matches!(
+            validate_settings(&Settings {
+                daily_goal: 1001,
+                ..Settings::default()
+            }),
+            Err(AppError::Validation(_))
+        ));
+        assert!(matches!(
+            validate_settings(&Settings {
+                weekly_goal: 10001,
                 ..Settings::default()
             }),
             Err(AppError::Validation(_))

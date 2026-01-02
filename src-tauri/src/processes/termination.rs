@@ -42,21 +42,32 @@ fn kill_by_name(process_name: &str) -> AppResult<KillSummary> {
     let mut system = System::new_all();
     system.refresh_all();
 
-    let mut items: Vec<KillItem> = Vec::new();
-    let mut any_requires_admin = false;
-
-    let mut pids: Vec<u32> = system
+    let entries = system
         .processes()
         .iter()
-        .filter_map(|(pid, p)| {
-            if eq_process_name(p.name(), process_name) {
-                Some(pid.as_u32())
+        .map(|(pid, p)| (pid.as_u32(), p.name().to_string()));
+    kill_by_name_from_entries(process_name, entries, |pid| kill_pid(pid))
+}
+
+/// `kill_by_name` 的可测试实现：接受“进程快照条目”与可注入的 `kill_pid`，避免单测触发系统调用。
+fn kill_by_name_from_entries<I>(
+    process_name: &str,
+    entries: I,
+    mut kill_pid_fn: impl FnMut(u32) -> AppResult<bool>,
+) -> AppResult<KillSummary>
+where
+    I: IntoIterator<Item = (u32, String)>,
+{
+    let mut pids: Vec<u32> = entries
+        .into_iter()
+        .filter_map(|(pid, name)| {
+            if eq_process_name(&name, process_name) {
+                Some(pid)
             } else {
                 None
             }
         })
         .collect();
-
     pids.sort_unstable();
 
     if pids.is_empty() {
@@ -73,38 +84,14 @@ fn kill_by_name(process_name: &str) -> AppResult<KillSummary> {
         });
     }
 
-    let mut killed = 0u32;
-    let mut failed = 0u32;
-    #[cfg(windows)]
-    let mut requires_admin = false;
-    #[cfg(not(windows))]
-    let requires_admin = false;
-
-    for pid in &pids {
-        match kill_pid(*pid) {
-            Ok(true) => killed += 1,
-            Ok(false) => {
-                failed += 1;
-            }
-            #[cfg(windows)]
-            Err(AppError::KillFailed(msg)) => {
-                failed += 1;
-                if msg.contains("ACCESS_DENIED") || msg.contains("权限") {
-                    requires_admin = true;
-                }
-            }
-            Err(e) => return Err(e),
-        }
-    }
-
-    any_requires_admin |= requires_admin;
-    items.push(KillItem {
+    let (killed, failed, requires_admin) = kill_pids(&pids, &mut kill_pid_fn)?;
+    let items = vec![KillItem {
         name: process_name.to_string(),
         pids,
         killed,
         failed,
         requires_admin,
-    });
+    }];
 
     if failed > 0 {
         tracing::warn!(
@@ -126,12 +113,50 @@ fn kill_by_name(process_name: &str) -> AppResult<KillSummary> {
 
     Ok(KillSummary {
         items,
-        requires_admin: any_requires_admin,
+        requires_admin,
     })
+}
+
+/// 逐个终止 PID 列表，并返回 `(killed, failed, requires_admin)` 汇总。
+fn kill_pids(
+    pids: &[u32],
+    kill_pid_fn: &mut impl FnMut(u32) -> AppResult<bool>,
+) -> AppResult<(u32, u32, bool)> {
+    let mut killed = 0u32;
+    let mut failed = 0u32;
+    #[cfg(windows)]
+    let mut requires_admin = false;
+    #[cfg(not(windows))]
+    let requires_admin = false;
+
+    for pid in pids {
+        match kill_pid_fn(*pid) {
+            Ok(true) => killed += 1,
+            Ok(false) => failed += 1,
+            #[cfg(windows)]
+            Err(AppError::KillFailed(msg)) => {
+                failed += 1;
+                if msg.contains("ACCESS_DENIED") || msg.contains("权限") {
+                    requires_admin = true;
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok((killed, failed, requires_admin))
 }
 
 /// 批量终止若干进程名（best-effort）：忽略单个名称的错误并合并为一次汇总结果。
 pub fn kill_names_best_effort(names: &[String]) -> KillSummary {
+    kill_names_best_effort_with(names, |name| kill_by_name(name))
+}
+
+/// `kill_names_best_effort` 的可注入实现：便于在单元测试中 mock `kill_by_name`。
+fn kill_names_best_effort_with(
+    names: &[String],
+    mut kill_by_name_fn: impl FnMut(&str) -> AppResult<KillSummary>,
+) -> KillSummary {
     if names.is_empty() {
         return KillSummary {
             items: Vec::new(),
@@ -143,7 +168,7 @@ pub fn kill_names_best_effort(names: &[String]) -> KillSummary {
     let mut requires_admin = false;
 
     for name in names {
-        if let Ok(summary) = kill_by_name(name) {
+        if let Ok(summary) = kill_by_name_fn(name) {
             requires_admin |= summary.requires_admin;
             all_items.extend(summary.items);
         }
@@ -215,10 +240,154 @@ fn kill_pid_windows(pid: u32) -> AppResult<bool> {
 }
 
 /// 进程名对比（Windows 下不区分大小写）。
+#[cfg(windows)]
 fn eq_process_name(a: &str, b: &str) -> bool {
-    if cfg!(windows) {
-        a.eq_ignore_ascii_case(b)
-    } else {
-        a == b
+    a.eq_ignore_ascii_case(b)
+}
+
+/// 进程名对比（非 Windows：保持大小写敏感，避免误杀）。
+#[cfg(not(windows))]
+fn eq_process_name(a: &str, b: &str) -> bool {
+    a == b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::Once;
+
+    /// 初始化 `tracing`（仅一次）：确保日志字段参数会被求值，便于覆盖率统计。
+    fn init_tracing_once() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let _ = tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::INFO)
+                .with_test_writer()
+                .try_init();
+        });
+    }
+
+    /// `kill_names_best_effort_with`：空列表应返回空结果。
+    #[test]
+    fn kill_names_best_effort_handles_empty_list() {
+        let out = kill_names_best_effort_with(&[], |_name| unreachable!("不应被调用"));
+        assert!(out.items.is_empty());
+        assert!(!out.requires_admin);
+    }
+
+    /// `kill_names_best_effort_with`：应合并多个名称的汇总结果，并忽略单个名称的错误。
+    #[test]
+    fn kill_names_best_effort_merges_and_ignores_errors() {
+        let names = vec!["a.exe".to_string(), "b.exe".to_string(), "bad.exe".to_string()];
+        let out = kill_names_best_effort_with(&names, |name| {
+            if name == "bad.exe" {
+                return Err(crate::errors::AppError::Invariant("boom".to_string()));
+            }
+            Ok(KillSummary {
+                items: vec![KillItem {
+                    name: name.to_string(),
+                    pids: vec![1],
+                    killed: 1,
+                    failed: 0,
+                    requires_admin: name == "b.exe",
+                }],
+                requires_admin: name == "b.exe",
+            })
+        });
+
+        assert_eq!(out.items.len(), 2);
+        assert!(out.items.iter().any(|it| it.name == "a.exe"));
+        assert!(out.items.iter().any(|it| it.name == "b.exe"));
+        assert!(out.requires_admin);
+    }
+
+    /// `kill_names_best_effort`：空列表应直接返回空结果（且不会触发系统调用）。
+    #[test]
+    fn kill_names_best_effort_public_empty_list_is_safe() {
+        let out = kill_names_best_effort(&[]);
+        assert!(out.items.is_empty());
+        assert!(!out.requires_admin);
+    }
+
+    /// `kill_by_name_from_entries`：无匹配进程时应返回空 PID 列表与 0 计数。
+    #[test]
+    fn kill_by_name_from_entries_handles_no_match() {
+        let out = kill_by_name_from_entries("a.exe", vec![(1, "b.exe".to_string())], |_pid| {
+            unreachable!("无匹配时不应调用 kill_pid")
+        })
+        .unwrap();
+        assert_eq!(out.items.len(), 1);
+        assert_eq!(out.items[0].name, "a.exe");
+        assert!(out.items[0].pids.is_empty());
+        assert_eq!(out.items[0].killed, 0);
+        assert_eq!(out.items[0].failed, 0);
+    }
+
+    /// `kill_by_name_from_entries`：应筛选并排序 PID，并正确累计 killed/failed。
+    #[test]
+    fn kill_by_name_from_entries_sorts_and_counts() {
+        init_tracing_once();
+        let entries = vec![
+            (3, "a.exe".to_string()),
+            (1, "a.exe".to_string()),
+            (2, "a.exe".to_string()),
+            (9, "b.exe".to_string()),
+        ];
+        let out = kill_by_name_from_entries("a.exe", entries, |pid| match pid {
+            1 | 3 => Ok(true),
+            2 => Ok(false),
+            _ => Ok(false),
+        })
+        .unwrap();
+
+        assert_eq!(out.items.len(), 1);
+        assert_eq!(out.items[0].pids, vec![1, 2, 3]);
+        assert_eq!(out.items[0].killed, 2);
+        assert_eq!(out.items[0].failed, 1);
+    }
+
+    /// `kill_by_name_from_entries`：当全部终止成功时应走到“成功日志”分支（failed=0）。
+    #[test]
+    fn kill_by_name_from_entries_logs_success_when_no_failures() {
+        init_tracing_once();
+        let entries = vec![(1, "a.exe".to_string()), (2, "a.exe".to_string())];
+        let out = kill_by_name_from_entries("a.exe", entries, |_pid| Ok(true)).unwrap();
+        assert_eq!(out.items.len(), 1);
+        assert_eq!(out.items[0].killed, 2);
+        assert_eq!(out.items[0].failed, 0);
+    }
+
+    /// `kill_by_name_from_entries`：遇到非“可忽略错误”应直接返回错误。
+    #[test]
+    fn kill_by_name_from_entries_propagates_unexpected_errors() {
+        let err = kill_by_name_from_entries("a.exe", vec![(1, "a.exe".to_string())], |_pid| {
+            Err(crate::errors::AppError::Invariant("x".to_string()))
+        })
+        .unwrap_err();
+        assert!(matches!(err, crate::errors::AppError::Invariant(_)));
+    }
+
+    /// `kill_pid`：非 Windows 下对不存在的 PID 应返回 Ok(false)。
+    #[test]
+    #[cfg(not(windows))]
+    fn kill_pid_returns_false_when_pid_missing() {
+        assert_eq!(kill_pid(u32::MAX).unwrap(), false);
+    }
+
+    /// `eq_process_name`：非 Windows 下应大小写敏感；Windows 下应忽略大小写。
+    #[test]
+    #[cfg(not(windows))]
+    fn eq_process_name_is_case_sensitive_on_non_windows() {
+        assert!(eq_process_name("WeChat.exe", "WeChat.exe"));
+        assert!(!eq_process_name("WeChat.exe", "wechat.exe"));
+    }
+
+    /// `eq_process_name`：Windows 下应忽略 ASCII 大小写。
+    #[test]
+    #[cfg(windows)]
+    fn eq_process_name_is_case_insensitive_on_windows() {
+        assert!(eq_process_name("WeChat.exe", "wechat.exe"));
+        assert!(eq_process_name("WECHAT.EXE", "wechat.exe"));
     }
 }

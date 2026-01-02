@@ -54,10 +54,10 @@ pub fn setup_tray(app: &mut tauri::App) -> AppResult<()> {
 
             match id {
                 MENU_START_ID => {
-                    let _ = crate::commands::timer::timer_start_inner(&state);
+                    let _ = crate::ipc::timer::timer_start_inner(&state);
                 }
                 MENU_PAUSE_ID => {
-                    let _ = crate::commands::timer::timer_pause_inner(&state);
+                    let _ = crate::ipc::timer::timer_pause_inner(&state);
                 }
                 MENU_SHOW_ID => {
                     if let Some(window) = app_handle.get_webview_window("main") {
