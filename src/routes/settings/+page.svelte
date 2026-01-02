@@ -23,8 +23,10 @@
   const { toast: toastMessage, showToast } = useToast();
 
   let saving = $state(false);
+  let savingUiVisible = $state(false);
   let saveError = $state<string | null>(null);
   let pendingSettings = $state<Settings | null>(null);
+  let savingUiTimerId = $state<number | null>(null);
 
   let storePaths = $state<StorePaths | null>(null);
   let storePathsLoading = $state(false);
@@ -47,6 +49,27 @@
     return Math.max(min, Math.min(max, Math.floor(v)));
   }
 
+  /** 清理“保存中”提示的延迟计时器（避免短暂保存也闪烁 UI）。 */
+  function clearSavingUiTimer(): void {
+    if (savingUiTimerId === null) return;
+    window.clearTimeout(savingUiTimerId);
+    savingUiTimerId = null;
+  }
+
+  /** 根据 `saving` 状态同步“保存中”提示：仅在保存持续一段时间后才显示。 */
+  function onSavingUiEffect(): void {
+    clearSavingUiTimer();
+    if (!saving) {
+      savingUiVisible = false;
+      return;
+    }
+    savingUiTimerId = window.setTimeout(() => {
+      if (saving) savingUiVisible = true;
+    }, 500);
+  }
+
+  $effect(onSavingUiEffect);
+
   /** 顺序保存设置：合并频繁变更，只提交最后一次。 */
   async function saveSettings(next: Settings): Promise<void> {
     pendingSettings = next;
@@ -54,10 +77,13 @@
     saving = true;
     saveError = null;
     try {
+      // 关键：必须先“取走当前待保存快照”再 await，否则用户在 await 期间继续修改会被误清空而丢更新。
       while (pendingSettings) {
-        const prevAlwaysOnTop = $appData?.settings.alwaysOnTop ?? false;
-        const snapshot = await updateSettings(pendingSettings);
+        const toSave = pendingSettings;
         pendingSettings = null;
+
+        const prevAlwaysOnTop = $appData?.settings.alwaysOnTop ?? false;
+        const snapshot = await updateSettings(toSave);
         applyAppSnapshot(snapshot);
 
         const now = snapshot.data.settings.alwaysOnTop;
@@ -246,8 +272,11 @@
     {#if saveError}
       <div class="mb-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">保存失败：{saveError}</div>
     {/if}
-    {#if saving}
-      <div class="mb-4 rounded-2xl bg-black/5 p-3 text-sm text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
+    {#if savingUiVisible}
+      <div
+        class="fixed top-3 left-1/2 z-50 -translate-x-1/2 rounded-2xl bg-black/5 px-3 py-2 text-xs text-zinc-600 shadow-sm backdrop-blur dark:bg-white/10 dark:text-zinc-300"
+        aria-live="polite"
+      >
         正在保存...
       </div>
     {/if}
