@@ -6,11 +6,12 @@ use crate::errors::AppResult;
 #[cfg(debug_assertions)]
 pub(crate) fn frontend_log_impl(level: &str, message: &str) -> AppResult<bool> {
     let lvl = level.trim().to_lowercase();
+    let msg = sanitize_frontend_log_message(message);
     match lvl.as_str() {
-        "debug" => tracing::debug!(target: "frontend", "{message}"),
-        "warn" | "warning" => tracing::warn!(target: "frontend", "{message}"),
-        "error" => tracing::error!(target: "frontend", "{message}"),
-        _ => tracing::info!(target: "frontend", "{message}"),
+        "debug" => tracing::debug!(target: "frontend", "{msg}"),
+        "warn" | "warning" => tracing::warn!(target: "frontend", "{msg}"),
+        "error" => tracing::error!(target: "frontend", "{msg}"),
+        _ => tracing::info!(target: "frontend", "{msg}"),
     }
     Ok(true)
 }

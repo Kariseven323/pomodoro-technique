@@ -1,5 +1,7 @@
 //! 番茄钟应用（Tauri 2）后端入口与命令注册。
 
+#![cfg_attr(test, allow(dead_code))]
+
 mod analysis;
 mod app_data;
 mod app_paths;
