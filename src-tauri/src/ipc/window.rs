@@ -44,7 +44,12 @@ pub fn set_mini_mode(
     state: tauri::State<'_, AppState>,
     enabled: bool,
 ) -> Result<bool, String> {
-    to_ipc_result(set_mini_mode_impl(&app, &state, enabled))
+    to_ipc_result((|| -> AppResult<bool> {
+        let ok = set_mini_mode_impl(&app, &state, enabled)?;
+        let _ = state.emit_mini_mode_changed(enabled);
+        let _ = crate::tray::refresh_tray(&*state);
+        Ok(ok)
+    })())
 }
 
 /// 迷你模式内部实现：记录进入前的尺寸/位置，便于恢复。
@@ -96,6 +101,18 @@ fn set_mini_mode_impl(app: &tauri::AppHandle, state: &AppState, enabled: bool) -
 
     tracing::info!(target: "window", "切换迷你模式：enabled={}", enabled);
     Ok(true)
+}
+
+/// 托盘复用：切换迷你模式的内部实现（不暴露给前端）。
+pub fn set_mini_mode_inner(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    enabled: bool,
+) -> AppResult<()> {
+    let _ = set_mini_mode_impl(app, state, enabled)?;
+    let _ = state.emit_mini_mode_changed(enabled);
+    let _ = crate::tray::refresh_tray(state);
+    Ok(())
 }
 
 /// 退出应用（用于迷你模式右键菜单）。

@@ -49,7 +49,7 @@ describe("api/tauri wrappers", () => {
     expect(invokeMock).toHaveBeenLastCalledWith("set_goals", { daily: 1, weekly: 2 });
   });
 
-  it("setCurrentTag / addTag", async () => {
+  it("setCurrentTag / addTag / renameTag / deleteTag", async () => {
     const snapshot = { ok: true };
     invokeMock.mockResolvedValueOnce(snapshot);
     await expect(api.setCurrentTag("学习")).resolves.toBe(snapshot);
@@ -59,6 +59,16 @@ describe("api/tauri wrappers", () => {
     invokeMock.mockResolvedValueOnce(tags);
     await expect(api.addTag("A")).resolves.toBe(tags);
     expect(invokeMock).toHaveBeenLastCalledWith("add_tag", { tag: "A" });
+
+    const renamedSnapshot = { ok: "renamed" };
+    invokeMock.mockResolvedValueOnce(renamedSnapshot);
+    await expect(api.renameTag("旧", "新")).resolves.toBe(renamedSnapshot);
+    expect(invokeMock).toHaveBeenLastCalledWith("rename_tag", { from: "旧", to: "新" });
+
+    const deletedSnapshot = { ok: "deleted" };
+    invokeMock.mockResolvedValueOnce(deletedSnapshot);
+    await expect(api.deleteTag("新")).resolves.toBe(deletedSnapshot);
+    expect(invokeMock).toHaveBeenLastCalledWith("delete_tag", { tag: "新" });
   });
 
   it("setBlacklist", async () => {

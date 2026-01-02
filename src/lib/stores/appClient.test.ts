@@ -9,7 +9,7 @@ const { listenMock, getAppSnapshotMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: listenMock }));
-vi.mock("$lib/api/tauri", () => ({ getAppSnapshot: getAppSnapshotMock }));
+vi.mock("$lib/api/tauri", () => ({ getAppSnapshot: getAppSnapshotMock, frontendLog: vi.fn() }));
 
 import type { AppData, AppSnapshot, TimerSnapshot, WorkCompletedEvent } from "$lib/shared/types";
 
@@ -140,11 +140,15 @@ describe("appClient stores", () => {
     expect(get(mod.appData)?.tags).toEqual(["A"]);
     expect(get(mod.timerSnapshot)?.currentTag).toBe("A");
 
-    expect(listenMock).toHaveBeenCalledTimes(4);
+    expect(listenMock).toHaveBeenCalledTimes(8);
     expect(handlers.has("pomodoro://snapshot")).toBe(true);
     expect(handlers.has("pomodoro://kill_result")).toBe(true);
     expect(handlers.has("pomodoro://work_completed")).toBe(true);
     expect(handlers.has("pomodoro://history_dev_changed")).toBe(true);
+    expect(handlers.has("pomodoro-completed")).toBe(true);
+    expect(handlers.has("milestone-reached")).toBe(true);
+    expect(handlers.has("pomodoro://audio_library_changed")).toBe(true);
+    expect(handlers.has("pomodoro://mini_mode_changed")).toBe(true);
 
     // snapshot 事件：应更新 timerSnapshot
     handlers.get("pomodoro://snapshot")?.({ payload: makeTimerSnapshot({ currentTag: "X" }) });

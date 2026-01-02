@@ -205,6 +205,13 @@ impl AppState {
         Ok(())
     }
 
+    /// 推送“迷你模式变更”事件给前端（用于托盘入口与前端 UI 同步）。
+    pub fn emit_mini_mode_changed(&self, enabled: bool) -> AppResult<()> {
+        self.app
+            .emit(crate::window_events::EVENT_MINI_MODE_CHANGED, enabled)?;
+        Ok(())
+    }
+
     /// 执行一次 tick：若计时器运行中则可能写入历史并持久化。
     pub fn tick(&self) -> AppResult<TickResult> {
         let mut data = self.data.lock().unwrap();

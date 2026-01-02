@@ -19,6 +19,7 @@ mod timer;
 #[cfg(not(test))]
 mod tray;
 pub mod typegen;
+mod window_events;
 
 use crate::app_data::{AppData, STORE_FILE_NAME, STORE_KEY};
 use crate::errors::{AppError, AppResult};
@@ -82,6 +83,8 @@ pub fn run() {
             ipc::settings::set_goals,
             ipc::tags::set_current_tag,
             ipc::tags::add_tag,
+            ipc::tags::rename_tag,
+            ipc::tags::delete_tag,
             ipc::blacklist::set_blacklist,
             ipc::history::get_history,
             ipc::history::set_history_remark,

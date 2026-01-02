@@ -54,6 +54,16 @@ export async function addTag(tag: string): Promise<string[]> {
   return invoke<string[]>("add_tag", { tag });
 }
 
+/** 重命名标签（同时更新历史记录中的标签字段）。 */
+export async function renameTag(from: string, to: string): Promise<AppSnapshot> {
+  return invoke<AppSnapshot>("rename_tag", { from, to });
+}
+
+/** 删除标签（同时清空历史记录中的该标签）。 */
+export async function deleteTag(tag: string): Promise<AppSnapshot> {
+  return invoke<AppSnapshot>("delete_tag", { tag });
+}
+
 /** 设置黑名单（专注期内仅允许新增，不允许移除）。 */
 export async function setBlacklist(blacklist: BlacklistItem[]): Promise<BlacklistItem[]> {
   return invoke<BlacklistItem[]>("set_blacklist", { blacklist });

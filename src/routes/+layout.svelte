@@ -1,9 +1,14 @@
 <script lang="ts">
   import "../app.css";
   import { onMount } from "svelte";
-  import { initAppClient, timerSnapshot } from "$lib/stores/appClient";
+  import TabBar from "$lib/components/TabBar.svelte";
+  import { setMiniMode } from "$lib/api/tauri";
+  import { appError, appLoading, initAppClient, timerSnapshot } from "$lib/stores/appClient";
   import MiniWindow from "$lib/features/timer/MiniWindow.svelte";
   import { miniMode } from "$lib/stores/uiState";
+  import type { TimerSnapshot } from "$lib/shared/types";
+
+  const props = $props<{ children?: import("svelte").Snippet }>();
 
   /** 将 `prefers-color-scheme` 应用到根节点的 `dark` class。 */
   function applyPreferredTheme(): void {
@@ -38,11 +43,73 @@
     void initAppClient();
   }
 
-  onMount(onInitApp);
+  /** 初始化 watchdog：避免极端情况下 init 未触发导致永远卡在“正在加载”。 */
+  function setupInitWatchdog(): () => void {
+    const id = window.setTimeout(() => {
+      if ($appLoading) {
+        appError.set("初始化超时：前端未能完成与后端的连接，请查看日志或重启应用。");
+        appLoading.set(false);
+      }
+    }, 20000);
+    return (): void => {
+      window.clearTimeout(id);
+    };
+  }
+
+  onMount(() => {
+    const cleanup = setupInitWatchdog();
+    onInitApp();
+    return cleanup;
+  });
+
+  let prevSnapshot = $state<TimerSnapshot | null>(null);
+  let autoExitBusy = $state(false);
+
+  /** 判断一次快照变更是否符合“自然阶段结束”的特征。 */
+  function isNaturalPhaseEnd(prev: TimerSnapshot, next: TimerSnapshot): boolean {
+    const phaseChanged = prev.phase !== next.phase;
+    const prevRemaining =
+      typeof prev.remainingSeconds === "bigint" ? prev.remainingSeconds : BigInt(prev.remainingSeconds);
+    const prevEnded = prev.isRunning && prevRemaining <= 1n;
+    const nextStopped = !next.isRunning;
+    return phaseChanged && prevEnded && nextStopped;
+  }
+
+  /** 阶段结束时：若未启用自动继续，则自动退出迷你模式（PRD v5）。 */
+  async function autoExitMiniModeIfNeeded(prev: TimerSnapshot, next: TimerSnapshot): Promise<void> {
+    if (!$miniMode) return;
+    if (autoExitBusy) return;
+    if (next.settings.autoContinueEnabled) return;
+    if (!isNaturalPhaseEnd(prev, next)) return;
+
+    autoExitBusy = true;
+    try {
+      await setMiniMode(false);
+      miniMode.set(false);
+    } catch {
+      // 忽略自动退出失败：用户仍可通过托盘/双击恢复。
+    } finally {
+      autoExitBusy = false;
+    }
+  }
+
+  /** 监听 timerSnapshot：用于迷你模式“阶段结束自动退出”。 */
+  function onTimerSnapshotEffect(): void {
+    const next = $timerSnapshot;
+    const prev = prevSnapshot;
+    prevSnapshot = next;
+    if (!next || !prev) return;
+    void autoExitMiniModeIfNeeded(prev, next);
+  }
+
+  $effect(onTimerSnapshotEffect);
 </script>
 
 {#if $miniMode}
   <MiniWindow timer={$timerSnapshot} />
 {:else}
-  <slot />
+  <div class="pb-24">
+    {@render props.children?.()}
+  </div>
+  <TabBar />
 {/if}
