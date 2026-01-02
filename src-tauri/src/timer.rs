@@ -526,7 +526,8 @@ pub fn spawn_timer_task(app: tauri::AppHandle) {
                         .into_iter()
                         .map(|b| b.name)
                         .collect();
-                    crate::commands::kill_names_and_emit(&state, &names);
+                    let payload = crate::processes::kill_names_best_effort(&names);
+                    let _ = state.emit_kill_result(payload);
                 }
                 if was_running || result.phase_ended {
                     let _ = state.emit_timer_snapshot();

@@ -2,8 +2,8 @@
 
 import { listen, type Event as TauriEvent, type UnlistenFn } from "@tauri-apps/api/event";
 import { writable } from "svelte/store";
-import { getAppSnapshot } from "$lib/tauriApi";
-import type { AppData, AppSnapshot, HistoryDay, HistoryRecord, KillSummary, TimerSnapshot, WorkCompletedEvent } from "$lib/types";
+import { getAppSnapshot } from "$lib/api/tauri";
+import type { AppData, AppSnapshot, HistoryDay, HistoryRecord, KillSummary, TimerSnapshot, WorkCompletedEvent } from "$lib/shared/types";
 
 /** 全局：持久化数据快照（settings/blacklist/tags/history）。 */
 export const appData = writable<AppData | null>(null);

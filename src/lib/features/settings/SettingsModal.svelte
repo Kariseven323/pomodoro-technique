@@ -1,9 +1,8 @@
 <script lang="ts">
   import { dev } from "$app/environment";
-  import DebugSection from "$lib/components/DebugSection.svelte";
-  import type { Settings } from "$lib/types";
-  import type { StorePaths } from "$lib/types";
-  import { getStorePaths, openLogDir as openLogDirApi, openStoreDir as openStoreDirApi } from "$lib/tauriApi";
+  import DebugSection from "$lib/features/settings/DebugSection.svelte";
+  import type { Settings, StorePaths } from "$lib/shared/types";
+  import { getStorePaths, openLogDir as openLogDirApi, openStoreDir as openStoreDirApi } from "$lib/api/tauri";
   import { createEventDispatcher } from "svelte";
 
   const props = $props<{ open: boolean; settings: Settings }>();

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import type { WorkCompletedEvent } from "$lib/types";
+  import type { WorkCompletedEvent } from "$lib/shared/types";
 
   const props = $props<{ open: boolean; event: WorkCompletedEvent | null }>();
 
@@ -87,4 +87,3 @@
     </div>
   </div>
 {/if}
-

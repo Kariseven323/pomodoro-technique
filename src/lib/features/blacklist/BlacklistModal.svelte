@@ -1,7 +1,10 @@
 <script lang="ts">
-  import type { BlacklistItem, BlacklistTemplate, ProcessInfo } from "$lib/types";
-  import { applyTemplate, deleteTemplate, getTemplates, listProcesses, saveTemplate } from "$lib/tauriApi";
+  import type { BlacklistItem, BlacklistTemplate, ProcessInfo } from "$lib/shared/types";
+  import { applyTemplate, deleteTemplate, getTemplates, listProcesses, saveTemplate } from "$lib/api/tauri";
   import { createEventDispatcher } from "svelte";
+  import BlacklistDraftList from "$lib/features/blacklist/components/BlacklistDraftList.svelte";
+  import RunningProcessesPanel from "$lib/features/blacklist/components/RunningProcessesPanel.svelte";
+  import TemplateSelector from "$lib/features/blacklist/components/TemplateSelector.svelte";
 
   const props = $props<{
     open: boolean;
@@ -17,10 +20,9 @@
     templatesChange: { templates: BlacklistTemplate[]; activeTemplateIds: string[]; blacklist: BlacklistItem[] };
   }>();
 
-  let loading = $state(false);
-  let error = $state<string | null>(null);
-  let query = $state("");
-  let processes = $state<ProcessInfo[]>([]);
+	  let loading = $state(false);
+	  let error = $state<string | null>(null);
+	  let processes = $state<ProcessInfo[]>([]);
   let lastUpdatedAt = $state<number | null>(null);
   let draft = $state<BlacklistItem[]>([]);
   let originalNames = $state<string[]>([]);
@@ -290,53 +292,25 @@
 
   /** 响应 `open` 变化：打开时加载并同步，关闭时清理状态。 */
   function onOpenEffect(): void {
-    if (props.open) {
-      syncDraftFromProps();
-      syncTemplatesFromProps();
-      refreshProcessesNow();
-      void loadTemplates();
-      startAutoRefresh();
-    } else {
-      stopAutoRefresh();
-      query = "";
-      error = null;
-      templateError = null;
-      templateNotice = null;
-    }
-  }
+	    if (props.open) {
+	      syncDraftFromProps();
+	      syncTemplatesFromProps();
+	      refreshProcessesNow();
+	      void loadTemplates();
+	      startAutoRefresh();
+	    } else {
+	      stopAutoRefresh();
+	      error = null;
+	      templateError = null;
+	      templateNotice = null;
+	    }
+	  }
 
   $effect(onOpenEffect);
 
-  /** 按查询过滤进程列表。 */
-  function filteredProcesses(): ProcessInfo[] {
-    const q = query.trim().toLowerCase();
-    if (!q) return processes;
-    const out: ProcessInfo[] = [];
-    for (const p of processes) {
-      if (p.name.toLowerCase().includes(q)) out.push(p);
-    }
-    return out;
-  }
-
-  /** 处理“显示名”输入框变化（通过 `data-name` 定位条目）。 */
-  function onDisplayNameInput(e: Event): void {
-    const el = e.currentTarget as HTMLInputElement;
-    const name = el.dataset["name"] ?? "";
-    setDisplayName(name, el.value);
-  }
-
-  /** 处理“移除”按钮点击（通过 `data-name` 定位条目）。 */
-  function onRemoveClick(e: Event): void {
-    const el = e.currentTarget as HTMLButtonElement;
-    const name = el.dataset["name"] ?? "";
-    removeFromDraft(name);
-  }
-
-  /** 处理进程勾选变化（通过 `data-name` 定位进程）。 */
-  function onProcessToggle(e: Event): void {
-    const el = e.currentTarget as HTMLInputElement;
-    const name = el.dataset["name"] ?? "";
-    toggleProcess(name, el.checked);
+  /** 判断某条目是否为打开弹窗时“已有条目”（用于锁定时禁用移除）。 */
+  function isOriginalName(name: string): boolean {
+    return originalNames.includes(normalizeName(name));
   }
 </script>
 
@@ -401,39 +375,14 @@
             <div class="mb-2 text-xs text-red-600 dark:text-red-300">失败：{templateError}</div>
           {/if}
 
-          <div class="max-h-40 space-y-2 overflow-auto pr-1">
-            {#each templatesDraft as t (t.id)}
-              <div class="flex items-center justify-between gap-2 rounded-2xl bg-black/5 p-2 dark:bg-white/10">
-                <label class="flex min-w-0 flex-1 items-center gap-2">
-                  <input
-                    class="h-4 w-4"
-                    type="checkbox"
-                    checked={isTemplateActive(t.id)}
-                    disabled={props.locked}
-                    onchange={() => void toggleTemplate(t.id)}
-                  />
-                  <div class="min-w-0">
-                    <div class="truncate text-sm text-zinc-900 dark:text-zinc-50">
-                      {t.name}
-                      {#if t.builtin}
-                        <span class="ml-2 rounded-lg bg-zinc-900/10 px-2 py-0.5 text-[10px] text-zinc-700 dark:bg-white/10 dark:text-zinc-200">
-                          内置
-                        </span>
-                      {/if}
-                    </div>
-                    <div class="truncate text-[11px] text-zinc-500 dark:text-zinc-400">{t.processes.length} 个进程</div>
-                  </div>
-                </label>
-                <button
-                  type="button"
-                  class="rounded-xl px-2 py-1 text-xs text-zinc-600 hover:bg-black/10 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
-                  disabled={t.builtin}
-                  onclick={() => void deleteTemplateById(t.id)}
-                >
-                  删除
-                </button>
-              </div>
-            {/each}
+          <div class="max-h-40 overflow-auto pr-1">
+            <TemplateSelector
+              templates={templatesDraft}
+              activeTemplateIds={activeTemplateIdsDraft}
+              locked={props.locked}
+              on:toggle={(e) => void toggleTemplate(e.detail)}
+              on:delete={(e) => void deleteTemplateById(e.detail)}
+            />
           </div>
 
           <div class="mt-3 flex items-center gap-2">
@@ -475,96 +424,22 @@
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div class="rounded-2xl border border-black/10 bg-white/60 p-4 dark:border-white/10 dark:bg-white/5">
-            <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">已加入黑名单</div>
-            {#if draft.length === 0}
-              <div class="text-sm text-zinc-500 dark:text-zinc-400">暂无黑名单</div>
-            {:else}
-              <div class="max-h-80 space-y-2 overflow-auto pr-1">
-                {#each draft as item (item.name)}
-                  <div class="flex items-center gap-2 rounded-2xl bg-black/5 p-2 dark:bg-white/10">
-                    <div class="min-w-0 flex-1">
-                      <div class="truncate text-sm text-zinc-900 dark:text-zinc-50">{item.name}</div>
-                      <input
-                        class="mt-1 w-full rounded-xl border border-black/10 bg-white/70 px-2 py-1 text-xs text-zinc-900 outline-none dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
-                        value={item.displayName}
-                        data-name={item.name}
-                        oninput={onDisplayNameInput}
-                        placeholder="显示名"
-                      />
-                    </div>
-                    <button
-                      class="rounded-xl px-2 py-1 text-xs text-zinc-600 hover:bg-black/10 disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-white/10"
-                      disabled={props.locked && originalNames.includes(normalizeName(item.name))}
-                      data-name={item.name}
-                      onclick={onRemoveClick}
-                    >
-                      移除
-                    </button>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-
-          <div class="rounded-2xl border border-black/10 bg-white/60 p-4 dark:border-white/10 dark:bg-white/5">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <div class="text-sm font-medium text-zinc-900 dark:text-zinc-50">正在运行的进程</div>
-              <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  class="rounded-xl px-2 py-1 text-xs text-zinc-600 hover:bg-black/5 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10"
-                  disabled={loading}
-                  onclick={refreshProcessesNow}
-                >
-                  刷新
-                </button>
-                <input
-                  class="w-44 rounded-2xl border border-black/10 bg-white/70 px-3 py-1 text-xs text-zinc-900 outline-none dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
-                  placeholder="搜索进程..."
-                  bind:value={query}
-                />
-              </div>
-            </div>
-            {#if lastUpdatedAt}
-              <div class="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                最近刷新：{new Date(lastUpdatedAt).toLocaleTimeString()}
-              </div>
-            {/if}
-
-            {#if error}
-              <div class="rounded-2xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">
-                加载失败：{error}
-              </div>
-            {:else if loading}
-              <div class="text-sm text-zinc-500 dark:text-zinc-400">正在加载进程...</div>
-            {:else}
-              <div class="max-h-80 space-y-2 overflow-auto pr-1">
-                {#each filteredProcesses() as p (p.name)}
-                  <label class="flex items-center gap-2 rounded-2xl bg-black/5 p-2 dark:bg-white/10">
-                    <input
-                      class="h-4 w-4"
-                      type="checkbox"
-                      checked={hasInDraft(p.name)}
-                      data-name={p.name}
-                      onchange={onProcessToggle}
-                    />
-                    {#if p.iconDataUrl}
-                      <img class="h-5 w-5 rounded" src={p.iconDataUrl} alt="" />
-                    {:else}
-                      <div class="h-5 w-5 rounded bg-white/60 dark:bg-white/20"></div>
-                    {/if}
-                    <div class="min-w-0 flex-1">
-                      <div class="truncate text-sm text-zinc-900 dark:text-zinc-50">{p.name}</div>
-                      <div class="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                        PID: {p.pid}{#if p.exePath} · {p.exePath}{/if}
-                      </div>
-                    </div>
-                  </label>
-                {/each}
-              </div>
-            {/if}
-          </div>
+          <BlacklistDraftList
+            draft={draft}
+            locked={props.locked}
+            isOriginalName={isOriginalName}
+            onDisplayNameChange={setDisplayName}
+            onRemove={removeFromDraft}
+          />
+          <RunningProcessesPanel
+            processes={processes}
+            loading={loading}
+            error={error}
+            lastUpdatedAt={lastUpdatedAt}
+            hasInDraft={hasInDraft}
+            onToggle={toggleProcess}
+            onRefresh={refreshProcessesNow}
+          />
         </div>
 
         <div class="mt-5 flex items-center justify-end gap-2">

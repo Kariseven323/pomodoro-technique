@@ -54,10 +54,10 @@ pub fn setup_tray(app: &mut tauri::App) -> AppResult<()> {
 
             match id {
                 MENU_START_ID => {
-                    let _ = crate::commands::timer_start_inner(&state);
+                    let _ = crate::commands::timer::timer_start_inner(&state);
                 }
                 MENU_PAUSE_ID => {
-                    let _ = crate::commands::timer_pause_inner(&state);
+                    let _ = crate::commands::timer::timer_pause_inner(&state);
                 }
                 MENU_SHOW_ID => {
                     if let Some(window) = app_handle.get_webview_window("main") {
@@ -149,10 +149,10 @@ fn build_tray_icon_rgba(text: &str, phase: Phase, is_running: bool) -> AppResult
     fill_round_rect(&mut rgba, 32, 32, 2, 2, 28, 28, 8, bg);
 
     let bytes = text.as_bytes();
-    let d0 = (bytes[0] - b'0') as u8;
-    let d1 = (bytes[1] - b'0') as u8;
-    let d2 = (bytes[3] - b'0') as u8;
-    let d3 = (bytes[4] - b'0') as u8;
+    let d0 = bytes[0] - b'0';
+    let d1 = bytes[1] - b'0';
+    let d2 = bytes[3] - b'0';
+    let d3 = bytes[4] - b'0';
 
     draw_digit(&mut rgba, 32, 32, 4, 8, d0, fg);
     draw_digit(&mut rgba, 32, 32, 11, 8, d1, fg);
@@ -169,7 +169,7 @@ fn draw_digit(buf: &mut [u8], w: u32, h: u32, x: i32, y: i32, d: u8, color: [u8;
 
     // 每段用小矩形表示（坐标相对 digit 原点）。
     if seg & 0b0000001 != 0 {
-        fill_rect(buf, w, h, x + 1, y + 0, 4, 1, color); // a
+        fill_rect(buf, w, h, x + 1, y, 4, 1, color); // a
     }
     if seg & 0b0000010 != 0 {
         fill_rect(buf, w, h, x + 5, y + 1, 1, 3, color); // b
@@ -181,10 +181,10 @@ fn draw_digit(buf: &mut [u8], w: u32, h: u32, x: i32, y: i32, d: u8, color: [u8;
         fill_rect(buf, w, h, x + 1, y + 8, 4, 1, color); // d
     }
     if seg & 0b0010000 != 0 {
-        fill_rect(buf, w, h, x + 0, y + 5, 1, 3, color); // e
+        fill_rect(buf, w, h, x, y + 5, 1, 3, color); // e
     }
     if seg & 0b0100000 != 0 {
-        fill_rect(buf, w, h, x + 0, y + 1, 1, 3, color); // f
+        fill_rect(buf, w, h, x, y + 1, 1, 3, color); // f
     }
     if seg & 0b1000000 != 0 {
         fill_rect(buf, w, h, x + 1, y + 4, 4, 1, color); // g
@@ -215,6 +215,7 @@ fn digit_segments(d: u8) -> u8 {
 }
 
 /// 填充矩形（RGBA 覆盖）。
+#[allow(clippy::too_many_arguments)]
 fn fill_rect(buf: &mut [u8], w: u32, h: u32, x: i32, y: i32, rw: i32, rh: i32, c: [u8; 4]) {
     for yy in y.max(0)..(y + rh).min(h as i32) {
         for xx in x.max(0)..(x + rw).min(w as i32) {
@@ -225,6 +226,7 @@ fn fill_rect(buf: &mut [u8], w: u32, h: u32, x: i32, y: i32, rw: i32, rh: i32, c
 }
 
 /// 填充圆角矩形（简单圆角裁切）。
+#[allow(clippy::too_many_arguments)]
 fn fill_round_rect(
     buf: &mut [u8],
     w: u32,

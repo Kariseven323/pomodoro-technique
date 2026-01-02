@@ -1,27 +1,15 @@
 <script lang="ts">
-  import { exitApp, timerPause, timerStart, setMiniMode } from "$lib/tauriApi";
-  import { miniMode } from "$lib/uiState";
-  import type { Phase, TimerSnapshot } from "$lib/types";
+  import { exitApp, timerPause, timerStart, setMiniMode } from "$lib/api/tauri";
+  import { miniMode } from "$lib/stores/uiState";
+  import type { TimerSnapshot } from "$lib/shared/types";
+  import { phaseLabel } from "$lib/utils/phase";
+  import { formatMmSs } from "$lib/utils/time";
 
   const props = $props<{ timer: TimerSnapshot | null }>();
 
   let menuOpen = $state(false);
   let menuX = $state(0);
   let menuY = $state(0);
-
-  /** 将秒数格式化为 `mm:ss`。 */
-  function formatMmSs(seconds: number): string {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${String(Math.min(m, 99)).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }
-
-  /** 将阶段映射为中文展示名。 */
-  function phaseLabel(phase: Phase): string {
-    if (phase === "work") return "工作";
-    if (phase === "shortBreak") return "短休息";
-    return "长休息";
-  }
 
   /** 关闭右键菜单。 */
   function closeMenu(): void {

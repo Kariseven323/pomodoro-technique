@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import type { DateRange, ExportField, ExportFormat } from "$lib/types";
+  import type { DateRange, ExportField, ExportFormat } from "$lib/shared/types";
 
   const props = $props<{ open: boolean; defaultRange: DateRange }>();
 
@@ -157,4 +157,3 @@
     </div>
   </div>
 {/if}
-

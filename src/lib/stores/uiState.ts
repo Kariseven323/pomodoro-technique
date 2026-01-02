@@ -4,4 +4,3 @@ import { writable } from "svelte/store";
 
 /** 是否处于迷你模式（对应后端 `set_mini_mode`）。 */
 export const miniMode = writable<boolean>(false);
-

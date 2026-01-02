@@ -14,7 +14,7 @@ import type {
   Settings,
   StorePaths,
   TimerSnapshot,
-} from "./types";
+} from "../shared/types";
 
 /** 获取应用完整快照（持久化数据 + 计时器状态）。 */
 export async function getAppSnapshot(): Promise<AppSnapshot> {

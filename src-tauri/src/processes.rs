@@ -172,6 +172,31 @@ pub fn kill_by_name(process_name: &str) -> AppResult<KillSummary> {
     })
 }
 
+/// 批量终止若干进程名（best-effort）：忽略单个名称的错误并合并为一次汇总结果。
+pub fn kill_names_best_effort(names: &[String]) -> KillSummary {
+    if names.is_empty() {
+        return KillSummary {
+            items: Vec::new(),
+            requires_admin: false,
+        };
+    }
+
+    let mut all_items = Vec::new();
+    let mut requires_admin = false;
+
+    for name in names {
+        if let Ok(summary) = kill_by_name(name) {
+            requires_admin |= summary.requires_admin;
+            all_items.extend(summary.items);
+        }
+    }
+
+    KillSummary {
+        items: all_items,
+        requires_admin,
+    }
+}
+
 /// 以 PID 终止进程（返回是否成功）。
 fn kill_pid(pid: u32) -> AppResult<bool> {
     #[cfg(windows)]

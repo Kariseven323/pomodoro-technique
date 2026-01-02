@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { GoalProgress } from "$lib/types";
+  import type { GoalProgress } from "$lib/shared/types";
 
   const props = $props<{ progress: GoalProgress }>();
 
@@ -62,4 +62,3 @@
     {/if}
   </div>
 </div>
-

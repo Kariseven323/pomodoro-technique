@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { FocusAnalysis } from "$lib/types";
+  import type { FocusAnalysis } from "$lib/shared/types";
 
   const props = $props<{ analysis: FocusAnalysis | null; loading: boolean; error: string | null }>();
 

@@ -1,9 +1,9 @@
 <script lang="ts">
   import "../app.css";
   import { onMount } from "svelte";
-  import { initAppClient, timerSnapshot } from "$lib/appClient";
-  import MiniWindow from "$lib/components/MiniWindow.svelte";
-  import { miniMode } from "$lib/uiState";
+  import { initAppClient, timerSnapshot } from "$lib/stores/appClient";
+  import MiniWindow from "$lib/features/timer/MiniWindow.svelte";
+  import { miniMode } from "$lib/stores/uiState";
 
   /** 将 `prefers-color-scheme` 应用到根节点的 `dark` class。 */
   function applyPreferredTheme(): void {

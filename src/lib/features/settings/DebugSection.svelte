@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { debugClearHistory, debugGenerateHistory } from "$lib/tauriApi";
+  import { debugClearHistory, debugGenerateHistory } from "$lib/api/tauri";
 
   let days = $state<number>(30);
   let loading = $state(false);
@@ -94,4 +94,3 @@
     </div>
   </div>
 </div>
-

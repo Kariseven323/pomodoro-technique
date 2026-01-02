@@ -4,12 +4,12 @@
   "description": "Windows 番茄钟（专注模式自动终止干扰程序）",
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "preview": "vite preview",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri"
+    "dev": "bunx --bun vite dev",
+    "build": "bunx --bun vite build",
+    "preview": "bunx --bun vite preview",
+    "check": "bunx --bun -p @sveltejs/kit svelte-kit sync && bunx --bun svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "bunx --bun -p @sveltejs/kit svelte-kit sync && bunx --bun svelte-check --tsconfig ./tsconfig.json --watch",
+    "tauri": "bunx -p @tauri-apps/cli tauri"
   },
   "license": "MIT",
   "dependencies": {

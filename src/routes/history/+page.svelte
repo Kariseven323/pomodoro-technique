@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { dev } from "$app/environment";
-  import { appData, historyDevChangedAt, timerSnapshot } from "$lib/appClient";
-  import ExportModal from "$lib/components/ExportModal.svelte";
-  import FocusAnalysisView from "$lib/components/FocusAnalysis.svelte";
-  import HistoryCalendar from "$lib/components/HistoryCalendar.svelte";
-  import { exportHistory, getFocusAnalysis, getHistory, setHistoryRemark, setMiniMode } from "$lib/tauriApi";
-  import { miniMode } from "$lib/uiState";
-  import type { DateRange, ExportField, ExportFormat, ExportRequest, FocusAnalysis, HistoryDay, HistoryRecord } from "$lib/types";
+  import { appData, historyDevChangedAt, timerSnapshot } from "$lib/stores/appClient";
+  import ExportModal from "$lib/features/history/ExportModal.svelte";
+  import FocusAnalysisView from "$lib/features/history/FocusAnalysis.svelte";
+  import HistoryCalendar from "$lib/features/history/HistoryCalendar.svelte";
+  import { exportHistory, getFocusAnalysis, getHistory, setHistoryRemark, setMiniMode } from "$lib/api/tauri";
+  import { miniMode } from "$lib/stores/uiState";
+  import type { DateRange, ExportField, ExportFormat, ExportRequest, FocusAnalysis, HistoryDay, HistoryRecord } from "$lib/shared/types";
+  import { addDays, endOfMonthYmd, startOfMonthYmd, startOfWeekYmd, todayYmd } from "$lib/utils/date";
 
   type ViewMode = "day" | "week" | "month";
 
@@ -33,53 +34,6 @@
   let remarkDrafts = $state<Record<string, string>>({});
   let remarkSavingKey = $state<string | null>(null);
   let expandedDates = $state<Set<string>>(new Set());
-
-  /** 将 `YYYY-MM-DD` 解析为 Date（本地时区，00:00）。 */
-  function parseYmd(ymd: string): Date {
-    const [y, m, d] = ymd.split("-").map((x) => Number(x));
-    return new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0);
-  }
-
-  /** 将 Date 格式化为 `YYYY-MM-DD`。 */
-  function formatYmd(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-
-  /** 获取今天日期（YYYY-MM-DD）。 */
-  function todayYmd(): string {
-    return formatYmd(new Date());
-  }
-
-  /** 日期加减天数。 */
-  function addDays(ymd: string, delta: number): string {
-    const dt = parseYmd(ymd);
-    dt.setDate(dt.getDate() + delta);
-    return formatYmd(dt);
-  }
-
-  /** 获取周一作为起始的周范围起点（YYYY-MM-DD）。 */
-  function startOfWeekYmd(ymd: string): string {
-    const dt = parseYmd(ymd);
-    const day = dt.getDay(); // Sun=0, Mon=1...
-    const offset = day === 0 ? 6 : day - 1;
-    dt.setDate(dt.getDate() - offset);
-    return formatYmd(dt);
-  }
-
-  /** 获取指定月份的第一天（YYYY-MM-DD）。 */
-  function startOfMonthYmd(ym: string): string {
-    const [y, m] = ym.split("-").map((x) => Number(x));
-    return formatYmd(new Date(y, (m ?? 1) - 1, 1));
-  }
-
-  /** 获取指定月份的最后一天（YYYY-MM-DD）。 */
-  function endOfMonthYmd(ym: string): string {
-    const [y, m] = ym.split("-").map((x) => Number(x));
-    return formatYmd(new Date(y, (m ?? 1), 0));
-  }
 
   /** 计算日历热力图映射：date -> count。 */
   function buildCounts(items: HistoryDay[]): Record<string, number> {
