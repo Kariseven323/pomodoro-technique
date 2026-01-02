@@ -2,9 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use tauri::Manager as _;
 use tracing_subscriber::prelude::*;
 
+use crate::app_paths;
 use crate::errors::{AppError, AppResult};
 
 /// 日志文件名前缀（配合 `tracing_appender` 生成 `pomodoro-YYYY-MM-DD.log`）。
@@ -19,23 +19,9 @@ pub const MAX_LOG_FILE_BYTES: u64 = 10 * 1024 * 1024;
 /// 日志文件保留数量（PRD v2：保留最近 7 个）。
 pub const MAX_LOG_FILES: usize = 7;
 
-/// 获取日志目录（Windows：`%APPDATA%/pomodoro-technique/logs/`；其他平台：`app_data_dir/logs/`）。
+/// 获取日志目录（统一入口：`root/logs/`）。
 pub fn log_dir(app: &tauri::AppHandle) -> AppResult<PathBuf> {
-    #[cfg(windows)]
-    {
-        let appdata = std::env::var("APPDATA")
-            .map_err(|_| AppError::Invariant("无法读取环境变量 APPDATA".to_string()))?;
-        return Ok(Path::new(&appdata).join("pomodoro-technique").join("logs"));
-    }
-
-    #[cfg(not(windows))]
-    {
-        let base = app
-            .path()
-            .app_data_dir()
-            .map_err(|_| AppError::Invariant("无法解析应用数据目录（app_data_dir）".to_string()))?;
-        Ok(base.join("logs"))
-    }
+    app_paths::app_log_dir(app)
 }
 
 /// 初始化文件日志（daily rolling + 保留最近若干文件）。

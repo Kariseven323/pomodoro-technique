@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Store 文件路径（同时被 Rust 与前端 guest bindings 兼容）。
-pub const STORE_PATH: &str = "pomodoro-data.json";
+/// Store 文件名（最终路径由后端根据平台解析到统一的数据根目录下）。
+pub const STORE_FILE_NAME: &str = "pomodoro-data.json";
 
 /// Store 内部主键（保存整棵 `AppData`）。
 pub const STORE_KEY: &str = "appData";

@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# 同步代码到 Windows 目录（默认排除 .gitignore 中的文件；并保证从仓库根目录同步）。
+# 同步代码到 Windows 目录（保留 Windows 端构建缓存；其余内容删除并覆盖同步）。
+#
+# 设计目标：
+# - Windows 端保留构建缓存（默认：`node_modules/` 与 `src-tauri/target/`），避免每次打包全量重建。
+# - 其它文件保持“删了再覆盖”的效果：同步时删除 Windows 端多余文件，并用本机（WSL）代码覆盖。
+# - 同步集合遵循 `.gitignore`：忽略项默认不从 WSL 端同步，但会在 Windows 端被删除（除非被保护）。
 
 set -euo pipefail
 
 WIN_PATH_DEFAULT="/mnt/c/Users/KAR1SEVEN/Desktop/projects/pomodoro-technique"
 WIN_PATH="${WIN_PATH:-$WIN_PATH_DEFAULT}"
 
-SYNC_INCLUDE_IGNORED="${SYNC_INCLUDE_IGNORED:-0}"
 SYNC_DRY_RUN="${SYNC_DRY_RUN:-0}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-TMP_LIST=""
-
 ## 清理临时文件（由 EXIT trap 调用）。
 cleanup() {
-  if [[ -n "${TMP_LIST:-}" ]]; then
-    rm -f -- "$TMP_LIST"
-  fi
+  :
 }
 
 ## 获取 git 仓库根目录；若不可用则回退到脚本所在目录。
@@ -29,42 +29,27 @@ get_repo_root() {
   echo "$SCRIPT_DIR"
 }
 
-## 删除目标目录下的全部内容（包含以 '.' 开头的隐藏文件/目录）。
-clear_destination_dir() {
-  local dest_dir="$1"
-  if [[ ! -d "$dest_dir" ]]; then
-    return 0
-  fi
-  find "$dest_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-}
-
-## 生成需要同步的文件清单（NUL 分隔，供 rsync --from0 使用）。
-generate_file_list() {
-  local repo_root="$1"
-  local list_file="$2"
-
-  if [[ "$SYNC_INCLUDE_IGNORED" == "1" ]]; then
-    {
-      git -C "$repo_root" ls-files -z
-      git -C "$repo_root" ls-files -z --others --ignored --exclude-standard
-    } >"$list_file"
-    return 0
-  fi
-
-  {
-    git -C "$repo_root" ls-files -z
-    git -C "$repo_root" ls-files -z --others --exclude-standard
-  } >"$list_file"
-}
-
-## 执行 rsync 同步（基于 files-from 的精确文件集同步）。
-run_rsync_sync() {
+## 构建 rsync 参数：保护 Windows 端缓存目录，其余内容按 `.gitignore` 删除并覆盖。
+## 执行 rsync 同步：保留缓存目录，其余删除并覆盖。
+run_sync() {
   local repo_root="$1"
   local dest_dir="$2"
-  local list_file="$3"
 
   local -a rsync_args
-  rsync_args=(-a -v --from0 --files-from="$list_file")
+  rsync_args=(-a -v --delete --delete-excluded --modify-window=2)
+
+  # 不同步 .git，同时保护 Windows 端可能存在的 .git（避免误删）。
+  rsync_args+=(--filter="P .git/")
+  rsync_args+=(--exclude=".git/")
+
+  # 保护并跳过同步 Windows 端构建缓存（避免每次重新打包）。
+  rsync_args+=(--filter="P /node_modules/")
+  rsync_args+=(--exclude="/node_modules/")
+  rsync_args+=(--filter="P /src-tauri/target/")
+  rsync_args+=(--exclude="/src-tauri/target/")
+
+  # 同步集合遵循 .gitignore；但被忽略的文件会在 Windows 端被删除（因为启用了 --delete-excluded）。
+  rsync_args+=(--filter=":- .gitignore")
 
   if [[ "$SYNC_DRY_RUN" == "1" ]]; then
     rsync_args+=(-n)
@@ -92,16 +77,9 @@ main() {
 
   trap cleanup EXIT
 
-  TMP_LIST="$(mktemp -t pomodoro-sync-files.XXXXXX)"
-  generate_file_list "$repo_root" "$TMP_LIST"
+  run_sync "$repo_root" "$WIN_PATH"
 
-  if [[ "$SYNC_DRY_RUN" != "1" ]]; then
-    clear_destination_dir "$WIN_PATH"
-  fi
-
-  run_rsync_sync "$repo_root" "$WIN_PATH" "$TMP_LIST"
-
-  echo "已同步到 $WIN_PATH（repo_root=$repo_root, include_ignored=$SYNC_INCLUDE_IGNORED, dry_run=$SYNC_DRY_RUN）"
+  echo "已同步到 $WIN_PATH（repo_root=$repo_root, dry_run=$SYNC_DRY_RUN；保留 node_modules/ 与 src-tauri/target/）"
 }
 
 main "$@"

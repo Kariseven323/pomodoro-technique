@@ -21,12 +21,12 @@ export async function getAppSnapshot(): Promise<AppSnapshot> {
   return invoke<AppSnapshot>("get_app_snapshot");
 }
 
-/** 获取应用持久化 store 的真实存储路径（目录 + 文件路径）。 */
+/** 获取应用数据根目录路径（统一入口）。 */
 export async function getStorePaths(): Promise<StorePaths> {
   return invoke<StorePaths>("get_store_paths");
 }
 
-/** 打开应用数据目录（用于查看当前项目文件存储路径）。 */
+/** 打开应用数据根目录（统一入口，便于一处查看与备份）。 */
 export async function openStoreDir(): Promise<void> {
   return invoke<void>("open_store_dir");
 }
@@ -109,6 +109,11 @@ export async function exportHistory(request: ExportRequest): Promise<string> {
 /** 打开日志目录（文件管理器）。 */
 export async function openLogDir(): Promise<boolean> {
   return invoke<boolean>("open_log_dir");
+}
+
+/** 前端诊断日志：写入后端 tracing 文件日志（用于定位 WebView/布局问题）。 */
+export async function frontendLog(level: "debug" | "info" | "warn" | "error", message: string): Promise<boolean> {
+  return invoke<boolean>("frontend_log", { level, message });
 }
 
 /** 退出应用（用于迷你模式右键菜单）。 */

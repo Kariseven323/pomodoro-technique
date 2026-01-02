@@ -5,12 +5,14 @@ use tauri::LogicalPosition;
 use tauri::LogicalSize;
 use tauri::Manager as _;
 use tauri_plugin_dialog::DialogExt as _;
+#[cfg(not(windows))]
 use tauri_plugin_opener::OpenerExt as _;
 
 use crate::analysis::FocusAnalysis;
 use crate::app_data::{
     BlacklistItem, BlacklistTemplate, DateRange, HistoryDay, HistoryRecord, Phase, Settings,
 };
+use crate::app_paths;
 use crate::errors::{AppError, AppResult};
 use crate::logging;
 use crate::processes::{self, ProcessInfo};
@@ -42,11 +44,11 @@ pub struct AppSnapshot {
     pub timer: TimerSnapshot,
 }
 
-/// 应用数据（store）文件路径信息（用于设置页展示与“打开文件夹”入口）。
+/// 应用数据根目录路径信息（用于设置页展示与“打开文件夹”入口）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorePaths {
-    /// Store 所在目录路径（可用于打开文件夹）。
+    /// 数据根目录路径（统一入口，可用于打开文件夹）。
     pub store_dir_path: String,
 }
 
@@ -105,39 +107,33 @@ pub fn get_app_snapshot(state: tauri::State<'_, AppState>) -> Result<AppSnapshot
     }))
 }
 
-/// 获取应用持久化 store 的真实存储路径（目录 + 文件路径）。
+/// 获取应用数据根目录路径（统一入口，便于用户一处查看与备份）。
 #[tauri::command]
 pub fn get_store_paths(app: tauri::AppHandle) -> Result<StorePaths, String> {
     to_ipc_result(get_store_paths_impl(&app))
 }
 
-/// 打开 store 所在目录（文件管理器）。
+/// 打开应用数据根目录（文件管理器，统一入口）。
 #[tauri::command]
 pub fn open_store_dir(app: tauri::AppHandle) -> Result<(), String> {
     to_ipc_result(open_store_dir_impl(&app))
 }
 
-/// 获取 store 路径的内部实现（便于统一错误处理）。
+/// 获取应用数据根目录路径的内部实现（统一入口）。
 fn get_store_paths_impl(app: &tauri::AppHandle) -> AppResult<StorePaths> {
-    let store_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| AppError::Invariant("无法解析应用数据目录（app_data_dir）".to_string()))?;
+    let store_dir = app_paths::app_root_dir(app)?;
 
     Ok(StorePaths {
         store_dir_path: store_dir.to_string_lossy().to_string(),
     })
 }
 
-/// 打开 store 目录的内部实现：确保目录存在后再请求系统打开。
+/// 打开应用数据根目录的内部实现：确保目录存在后再请求系统打开（统一入口）。
 fn open_store_dir_impl(app: &tauri::AppHandle) -> AppResult<()> {
-    let store_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| AppError::Invariant("无法解析应用数据目录（app_data_dir）".to_string()))?;
+    let store_dir = app_paths::app_root_dir(app)?;
 
     std::fs::create_dir_all(&store_dir)
-        .map_err(|e| AppError::Invariant(format!("创建应用数据目录失败：{e}")))?;
+        .map_err(|e| AppError::Invariant(format!("创建根目录失败：{e}")))?;
 
     #[cfg(windows)]
     {
@@ -145,7 +141,7 @@ fn open_store_dir_impl(app: &tauri::AppHandle) -> AppResult<()> {
             .arg(&store_dir)
             .spawn()
             .map_err(|e| AppError::Invariant(format!("打开文件夹失败：{e}")))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(windows))]
@@ -153,9 +149,8 @@ fn open_store_dir_impl(app: &tauri::AppHandle) -> AppResult<()> {
         app.opener()
             .open_path(store_dir.to_string_lossy().to_string(), None::<&str>)
             .map_err(|e| AppError::Invariant(format!("打开文件夹失败：{e}")))?;
+        Ok(())
     }
-
-    Ok(())
 }
 
 /// 更新设置（带范围校验），并在必要时重置当前阶段的剩余时间。
@@ -768,6 +763,30 @@ fn export_history_impl(
 #[tauri::command]
 pub fn open_log_dir(app: tauri::AppHandle) -> Result<bool, String> {
     to_ipc_result(open_log_dir_impl(&app))
+}
+
+/// 前端日志桥接：将前端诊断信息写入后端文件日志（用于定位 WebView/布局问题）。
+#[tauri::command]
+pub fn frontend_log(level: String, message: String) -> Result<bool, String> {
+    to_ipc_result(frontend_log_impl(&level, &message))
+}
+
+/// 前端日志桥接的内部实现：按 level 写入 tracing。
+fn frontend_log_impl(level: &str, message: &str) -> AppResult<bool> {
+    if !cfg!(debug_assertions) {
+        return Err(AppError::Validation(
+            "仅开发环境可使用前端诊断日志（frontend_log）".to_string(),
+        ));
+    }
+
+    let lvl = level.trim().to_lowercase();
+    match lvl.as_str() {
+        "debug" => tracing::debug!(target: "frontend", "{message}"),
+        "warn" | "warning" => tracing::warn!(target: "frontend", "{message}"),
+        "error" => tracing::error!(target: "frontend", "{message}"),
+        _ => tracing::info!(target: "frontend", "{message}"),
+    }
+    Ok(true)
 }
 
 /// 打开日志目录的内部实现。
