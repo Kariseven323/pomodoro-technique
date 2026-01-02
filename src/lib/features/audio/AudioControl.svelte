@@ -1,30 +1,21 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { get } from "svelte/store";
-  import { audioList, audioPause, audioPlay, audioSetVolume, updateSettings } from "$lib/api/tauri";
+  import { audioPause, audioPlay, audioSetVolume, updateSettings } from "$lib/api/tauri";
   import { appData, applyAppSnapshot, timerSnapshot } from "$lib/stores/appClient";
   import type { CustomAudio, Settings } from "$lib/shared/types";
 
   const props = $props<{ settings: Settings }>();
 
   let audios = $state<CustomAudio[]>([]);
-  let loading = $state(false);
   let error = $state<string | null>(null);
   let playing = $state(false);
 
-  /** 拉取音效列表（内置 + 自定义）。 */
-  async function loadAudios(): Promise<void> {
-    loading = true;
-    error = null;
-    try {
-      audios = await audioList();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-      audios = [];
-    } finally {
-      loading = false;
-    }
+  /** 从全局 `appData.customAudios` 同步音效列表，确保“导入后返回主界面”能立即刷新。 */
+  function syncAudiosEffect(): void {
+    audios = $appData?.customAudios ?? [];
   }
+
+  $effect(syncAudiosEffect);
 
   /** 将 settings 的 audio 字段变更写回后端并同步到全局 store。 */
   async function saveAudioSettings(next: Settings["audio"]): Promise<void> {
@@ -40,8 +31,12 @@
     const next = { ...props.settings.audio, enabled: !props.settings.audio.enabled };
     await saveAudioSettings(next);
     if (!next.enabled) {
-      await audioPause();
-      playing = false;
+      try {
+        await audioPause();
+        playing = false;
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      }
     }
   }
 
@@ -55,8 +50,13 @@
       $timerSnapshot?.phase === "work" &&
       $timerSnapshot?.isRunning
     ) {
-      await audioPlay(next.currentAudioId);
-      playing = true;
+      try {
+        const ok = await audioPlay(next.currentAudioId);
+        playing = ok;
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+        playing = false;
+      }
     }
   }
 
@@ -66,11 +66,17 @@
     const next = { ...props.settings.audio, currentAudioId: id };
     await saveAudioSettings(next);
     if (playing) {
-      if (id.trim().length === 0) {
-        await audioPause();
+      try {
+        if (id.trim().length === 0) {
+          await audioPause();
+          playing = false;
+        } else {
+          const ok = await audioPlay(id);
+          playing = ok;
+        }
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
         playing = false;
-      } else {
-        await audioPlay(id);
       }
     }
   }
@@ -78,13 +84,25 @@
   /** 播放/暂停切换。 */
   async function togglePlayPause(): Promise<void> {
     if (playing) {
-      await audioPause();
-      playing = false;
+      try {
+        await audioPause();
+        playing = false;
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      }
       return;
     }
     if (props.settings.audio.currentAudioId.trim().length === 0) return;
-    const ok = await audioPlay(props.settings.audio.currentAudioId);
-    playing = ok;
+    try {
+      const ok = await audioPlay(props.settings.audio.currentAudioId);
+      playing = ok;
+      if (!ok) {
+        error = "音效未能开始播放（可能是平台不支持或输出设备不可用）";
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      playing = false;
+    }
   }
 
   /** 调整音量：后端立即应用，并同步写回 settings（用于下次启动恢复）。 */
@@ -95,10 +113,6 @@
     if (!current) return;
     appData.set({ ...current, settings: { ...current.settings, audio: { ...current.settings.audio, volume: v } } });
   }
-
-  onMount(() => {
-    void loadAudios();
-  });
 </script>
 
 <div class="mt-4 rounded-2xl bg-black/5 p-3 dark:bg-white/10">
@@ -134,12 +148,10 @@
       <select
         class="w-full rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-900 outline-none disabled:opacity-50 dark:border-white/10 dark:bg-zinc-100/90 dark:text-zinc-900"
         value={props.settings.audio.currentAudioId}
-        disabled={!props.settings.audio.enabled || loading}
+        disabled={!props.settings.audio.enabled}
         onchange={(ev) => void onSelectAudio(ev)}
       >
-        {#if loading}
-          <option value={props.settings.audio.currentAudioId}>加载中...</option>
-        {:else if audios.length === 0}
+        {#if audios.length === 0}
           <option value="">未导入音效</option>
         {:else}
           {#each audios as a (a.id)}

@@ -189,6 +189,16 @@ impl AppState {
         Ok(())
     }
 
+    /// 推送“音频库变更”事件给前端（用于导入/删除后刷新下拉框列表）。
+    pub fn emit_audio_library_changed(
+        &self,
+        custom_audios: Vec<crate::app_data::CustomAudio>,
+    ) -> AppResult<()> {
+        self.app
+            .emit(crate::audio::EVENT_AUDIO_LIBRARY_CHANGED, custom_audios)?;
+        Ok(())
+    }
+
     /// 推送一个“无结构负载”的简单事件给前端（用于提示 UI 刷新）。
     pub fn emit_simple_event(&self, event: &str) -> AppResult<()> {
         self.app.emit(event, true)?;

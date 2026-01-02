@@ -5,6 +5,29 @@ use crate::commands::common::to_ipc_result;
 use crate::errors::{AppError, AppResult};
 use crate::state::AppState;
 
+/// 从导入源文件路径推导默认音效显示名（优先文件名去扩展名；失败时回退为“自定义音效”）。
+fn default_audio_display_name_from_path(src: &std::path::Path) -> String {
+    let file_name = src
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !file_name.is_empty() {
+        return file_name;
+    }
+    let file_name = src
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !file_name.is_empty() {
+        return file_name;
+    }
+    "自定义音效".to_string()
+}
+
 /// 获取音频列表（仅自定义：v4 不提供预设音效）。
 #[tauri::command]
 pub fn audio_list(state: tauri::State<'_, AppState>) -> Result<Vec<CustomAudio>, String> {
@@ -105,9 +128,11 @@ fn audio_import_impl(state: &AppState, file_path: String, name: String) -> AppRe
         ));
     }
     let name = name.trim().to_string();
-    if name.is_empty() {
-        return Err(AppError::Validation("音效名称不能为空".to_string()));
-    }
+    let name = if name.is_empty() {
+        default_audio_display_name_from_path(&src)
+    } else {
+        name
+    };
     tracing::info!(
         target: "audio",
         "导入音效：src={} name={}",
@@ -145,7 +170,8 @@ fn audio_import_impl(state: &AppState, file_path: String, name: String) -> AppRe
         data.custom_audios.push(item.clone());
         Ok(data.custom_audios.clone())
     })?;
-    let _ = state.audio_controller().update_custom_audios(custom_audios);
+    let _ = state.audio_controller().update_custom_audios(custom_audios.clone());
+    let _ = state.emit_audio_library_changed(custom_audios);
     let _ = state.emit_timer_snapshot();
 
     Ok(item)
@@ -189,7 +215,8 @@ fn audio_delete_impl(state: &AppState, audio_id: String) -> AppResult<bool> {
     );
     let _ = std::fs::remove_file(&path);
 
-    let _ = state.audio_controller().update_custom_audios(custom_audios);
+    let _ = state.audio_controller().update_custom_audios(custom_audios.clone());
+    let _ = state.emit_audio_library_changed(custom_audios);
     // 若删除了当前选中的音效，则尽量暂停并触发一次同步，避免解码/自动播放状态异常。
     if should_fallback {
         let _ = state.audio_controller().pause();

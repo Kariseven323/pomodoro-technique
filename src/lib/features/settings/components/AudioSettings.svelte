@@ -23,6 +23,16 @@
   let importName = $state<string>("");
   let importing = $state(false);
 
+  /** 从文件路径推导默认显示名（优先文件名去扩展名），用于“未填写导入后显示名称”场景。 */
+  function defaultDisplayNameFromPath(path: string): string {
+    const normalized = path.replaceAll("\\\\", "/");
+    const base = normalized.split("/").pop() ?? "";
+    if (!base) return "自定义音效";
+    const dot = base.lastIndexOf(".");
+    if (dot <= 0) return base;
+    return base.slice(0, dot) || "自定义音效";
+  }
+
   /** 拉取音效列表（内置 + 自定义）。 */
   async function loadAudios(): Promise<void> {
     loading = true;
@@ -54,7 +64,7 @@
         notice = "已取消选择";
         return;
       }
-      const name = importName.trim() || "自定义音效";
+      const name = importName.trim() || defaultDisplayNameFromPath(selected);
       await frontendLog("info", `[audio_import] importing file=${selected} name=${name}`);
       const created = await audioImport(selected, name);
       await frontendLog("info", `[audio_import] success file=${selected}`);

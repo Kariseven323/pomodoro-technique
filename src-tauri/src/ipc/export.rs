@@ -24,6 +24,14 @@ fn export_history_ipc_impl(
     state: &AppState,
     request: ExportRequest,
 ) -> AppResult<String> {
+    tracing::warn!(
+        target: "storage",
+        "export_history 开始：from={} to={} format={:?} fields={}",
+        request.range.from,
+        request.range.to,
+        request.format,
+        request.fields.len()
+    );
     let default_name = default_export_file_name(&request.range, request.format.clone());
 
     let Some(path) = app
@@ -32,6 +40,7 @@ fn export_history_ipc_impl(
         .set_file_name(&default_name)
         .blocking_save_file()
     else {
+        tracing::warn!(target: "storage", "export_history 已取消（用户关闭保存对话框）");
         return Err(AppError::Validation("已取消导出".to_string()));
     };
 
@@ -41,6 +50,10 @@ fn export_history_ipc_impl(
 
     export_history_to_path(state, &request, &path)?;
 
-    tracing::info!(target: "storage", "导出历史成功：path={}", path.to_string_lossy());
+    tracing::warn!(
+        target: "storage",
+        "export_history 成功：path={}",
+        path.to_string_lossy()
+    );
     Ok(path.to_string_lossy().to_string())
 }

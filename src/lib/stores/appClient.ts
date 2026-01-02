@@ -6,6 +6,7 @@ import { getAppSnapshot } from "$lib/api/tauri";
 import type {
   AppData,
   AppSnapshot,
+  CustomAudio,
   HistoryDay,
   HistoryRecord,
   KillSummary,
@@ -41,6 +42,9 @@ export const appError = writable<string | null>(null);
 
 /** 全局：调试历史数据变更时间戳（用于历史页面自动刷新）。 */
 export const historyDevChangedAt = writable<number>(0);
+
+/** 全局：自定义音频列表变更时间戳（用于主界面下拉框刷新）。 */
+export const audioLibraryChangedAt = writable<number>(0);
 
 let initialized = false;
 let unlistenFns: UnlistenFn[] = [];
@@ -155,10 +159,20 @@ async function registerListeners(): Promise<void> {
     milestoneReached.set(e.payload);
   }
 
+  /** 处理后端推送的“音频库变更”事件：更新 `AppData.customAudios` 并通知依赖组件刷新。 */
+  function onAudioLibraryChangedEvent(e: TauriEvent<CustomAudio[]>): void {
+    audioLibraryChangedAt.set(Date.now());
+    appData.update((data): AppData | null => {
+      if (!data) return data;
+      return { ...data, customAudios: e.payload };
+    });
+  }
+
   unlistenFns.push(await listen<TimerSnapshot>("pomodoro://snapshot", onTimerSnapshotEvent));
   unlistenFns.push(await listen<KillSummary>("pomodoro://kill_result", onKillResultEvent));
   unlistenFns.push(await listen<WorkCompletedEvent>("pomodoro://work_completed", onWorkCompletedEvent));
   unlistenFns.push(await listen<boolean>("pomodoro://history_dev_changed", onHistoryDevChangedEvent));
   unlistenFns.push(await listen<PomodoroCompletedPayload>("pomodoro-completed", onPomodoroCompletedEvent));
   unlistenFns.push(await listen<MilestoneReachedPayload>("milestone-reached", onMilestoneReachedEvent));
+  unlistenFns.push(await listen<CustomAudio[]>("pomodoro://audio_library_changed", onAudioLibraryChangedEvent));
 }

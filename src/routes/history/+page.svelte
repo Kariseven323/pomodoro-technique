@@ -47,6 +47,7 @@
   let exportOpen = $state(false);
   let lastExportPath = $state<string | null>(null);
   let exportError = $state<string | null>(null);
+  let exporting = $state(false);
 
   let analysis = $state<FocusAnalysis | null>(null);
   let analysisLoading = $state(false);
@@ -263,11 +264,14 @@
     exportError = null;
     lastExportPath = null;
     try {
+      exporting = true;
       const request: ExportRequest = { range: e.detail.range, format: e.detail.format, fields: e.detail.fields };
       lastExportPath = await exportHistory(request);
       exportOpen = false;
     } catch (err) {
       exportError = err instanceof Error ? err.message : String(err);
+    } finally {
+      exporting = false;
     }
   }
 
@@ -368,7 +372,7 @@
           {$miniMode ? "退出迷你" : "迷你模式"}
         </button>
         <button
-          class="rounded-2xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
+          class="rounded-2xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
           onclick={openExport}
           disabled={days.length === 0}
         >
@@ -597,4 +601,11 @@
   </div>
 </main>
 
-<ExportModal open={exportOpen} defaultRange={range} on:close={closeExport} on:submit={onExportSubmit} />
+<ExportModal
+  open={exportOpen}
+  defaultRange={range}
+  error={exportError}
+  busy={exporting}
+  on:close={closeExport}
+  on:submit={onExportSubmit}
+/>

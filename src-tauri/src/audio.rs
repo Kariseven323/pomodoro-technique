@@ -15,6 +15,18 @@ use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source as _};
 use crate::app_data::{AppData, AudioSettings, CustomAudio, Phase};
 use crate::errors::{AppError, AppResult};
 
+/// 前端事件：音频库变更（导入/删除后推送给前端，用于刷新下拉框列表）。
+pub const EVENT_AUDIO_LIBRARY_CHANGED: &str = "pomodoro://audio_library_changed";
+
+/// 音效播放模式：自动跟随番茄（`autoPlay`）或手动试听。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AudioPlayMode {
+    /// 自动模式：由计时器状态驱动播放/暂停/淡出。
+    Auto,
+    /// 手动模式：用户点击播放/暂停后进入，计时器不再强制暂停（用于未开始计时的试听）。
+    Manual,
+}
+
 /// 预设音效列表（v4 不提供预设音效，因此为空）。
 pub fn builtin_audios() -> Vec<CustomAudio> {
     vec![]
@@ -82,6 +94,8 @@ pub struct AudioEngine {
     sink: Option<Sink>,
     /// 当前正在加载的音频 id。
     current_audio_id: Option<String>,
+    /// 当前播放模式（自动/手动）。
+    play_mode: AudioPlayMode,
     /// 目标音量（0.0-1.0）。
     target_volume: f32,
     /// 淡出开始时的 `remainingSeconds`（固定为 5）。
@@ -96,6 +110,7 @@ impl std::fmt::Debug for AudioEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AudioEngine")
             .field("current_audio_id", &self.current_audio_id)
+            .field("play_mode", &self.play_mode)
             .field("target_volume", &self.target_volume)
             .field("fade_start_remaining", &self.fade_start_remaining)
             .field("fade_start_volume", &self.fade_start_volume)
@@ -108,6 +123,8 @@ impl std::fmt::Debug for AudioEngine {
 pub struct AudioEngine {
     /// 当前“逻辑选中”的音频 id（用于 UI 状态同步）。
     current_audio_id: Option<String>,
+    /// 当前播放模式（自动/手动）。
+    play_mode: AudioPlayMode,
     /// 目标音量（0.0-1.0）。
     target_volume: f32,
 }
@@ -121,6 +138,7 @@ impl Default for AudioEngine {
             handle: None,
             sink: None,
             current_audio_id: None,
+            play_mode: AudioPlayMode::Auto,
             target_volume: 0.6,
             fade_start_remaining: None,
             fade_start_volume: 0.6,
@@ -134,6 +152,7 @@ impl Default for AudioEngine {
     fn default() -> Self {
         Self {
             current_audio_id: None,
+            play_mode: AudioPlayMode::Auto,
             target_volume: 0.6,
         }
     }
@@ -156,8 +175,8 @@ impl AudioEngine {
         }
     }
 
-    /// 暂停播放（若未播放则返回 `false`）。
-    pub fn pause(&mut self) -> bool {
+    /// 内部暂停实现：不会变更播放模式（用于自动同步逻辑）。
+    fn pause_inner(&mut self) -> bool {
         self.fade_start_remaining = None;
         if let Some(sink) = &self.sink {
             sink.pause();
@@ -166,8 +185,14 @@ impl AudioEngine {
         false
     }
 
-    /// 播放指定音效（会替换当前 sink），并设置为循环播放。
-    pub fn play(&mut self, audio_dir: &Path, audio: &CustomAudio) -> AppResult<bool> {
+    /// 手动暂停播放：进入手动模式（用于“未开始计时的试听”或用户主动暂停）。
+    pub fn pause_manual(&mut self) -> bool {
+        self.play_mode = AudioPlayMode::Manual;
+        self.pause_inner()
+    }
+
+    /// 播放指定音效的内部实现：会替换当前 sink，并设置为循环播放。
+    fn play_inner(&mut self, audio_dir: &Path, audio: &CustomAudio) -> AppResult<bool> {
         self.fade_start_remaining = None;
         self.ensure_stream()?;
 
@@ -196,6 +221,18 @@ impl AudioEngine {
         Ok(true)
     }
 
+    /// 手动播放：进入手动模式并开始播放（用于 UI 的播放按钮）。
+    pub fn play_manual(&mut self, audio_dir: &Path, audio: &CustomAudio) -> AppResult<bool> {
+        self.play_mode = AudioPlayMode::Manual;
+        self.play_inner(audio_dir, audio)
+    }
+
+    /// 自动播放：进入自动模式并开始播放（用于 `autoPlay` 同步逻辑）。
+    fn play_auto(&mut self, audio_dir: &Path, audio: &CustomAudio) -> AppResult<bool> {
+        self.play_mode = AudioPlayMode::Auto;
+        self.play_inner(audio_dir, audio)
+    }
+
     /// 根据当前计时器状态同步音效：自动播放/暂停 + 结束前淡出。
     pub fn sync_with_timer(
         &mut self,
@@ -210,18 +247,23 @@ impl AudioEngine {
         self.set_volume(settings.volume);
 
         if !settings.enabled {
-            let _ = self.pause();
+            let _ = self.pause_inner();
             return Ok(());
         }
 
         if settings.auto_play {
             if phase != Phase::Work || !is_running {
-                let _ = self.pause();
+                // 仅在“自动模式”下强制暂停；手动模式用于试听，不应被计时器状态立刻打断。
+                if self.play_mode == AudioPlayMode::Auto {
+                    let _ = self.pause_inner();
+                }
                 return Ok(());
             }
 
             // 自动播放：确保当前音效已开始。
-            self.play_current_if_needed(audio_dir, data, settings)?;
+            if self.play_mode == AudioPlayMode::Auto {
+                self.play_current_if_needed(audio_dir, data, settings)?;
+            }
 
             // PRD v4：计时结束前 5 秒开始淡出，淡出时长 3 秒，淡出后自动暂停。
             self.maybe_fade_out(remaining_seconds);
@@ -250,7 +292,7 @@ impl AudioEngine {
         }
 
         if let Some(audio) = find_audio_by_id(data, current) {
-            let _ = self.play(audio_dir, &audio)?;
+            let _ = self.play_auto(audio_dir, &audio)?;
         }
         Ok(())
     }
@@ -320,15 +362,27 @@ impl AudioEngine {
         self.target_volume = (volume.min(100) as f32) / 100.0;
     }
 
-    /// 暂停播放（非 Windows：始终返回 `false`，仅清理淡出状态）。
-    pub fn pause(&mut self) -> bool {
+    /// 内部暂停实现：不会变更播放模式（用于自动同步逻辑）。
+    fn pause_inner(&mut self) -> bool {
         false
     }
 
-    /// 播放指定音效（非 Windows：不实际播放，仅记录当前 id）。
-    pub fn play(&mut self, _audio_dir: &Path, audio: &CustomAudio) -> AppResult<bool> {
+    /// 手动暂停播放：进入手动模式（非 Windows：不实际播放，仅记录模式变化）。
+    pub fn pause_manual(&mut self) -> bool {
+        self.play_mode = AudioPlayMode::Manual;
+        self.pause_inner()
+    }
+
+    /// 播放指定音效的内部实现（非 Windows：不实际播放，仅记录当前 id）。
+    fn play_inner(&mut self, _audio_dir: &Path, audio: &CustomAudio) -> AppResult<bool> {
         self.current_audio_id = Some(audio.id.clone());
         Ok(false)
+    }
+
+    /// 手动播放：进入手动模式（非 Windows：不实际播放，仅记录当前 id）。
+    pub fn play_manual(&mut self, audio_dir: &Path, audio: &CustomAudio) -> AppResult<bool> {
+        self.play_mode = AudioPlayMode::Manual;
+        self.play_inner(audio_dir, audio)
     }
 
     /// 同步计时器状态（非 Windows：不实际播放，始终返回成功）。
@@ -497,11 +551,11 @@ fn run_audio_thread(audio_dir: PathBuf, rx: mpsc::Receiver<AudioCommand>) {
                 let _ = reply.send(Ok(true));
             }
             AudioCommand::Play { audio, reply } => {
-                let out = engine.play(&audio_dir, &audio);
+                let out = engine.play_manual(&audio_dir, &audio);
                 let _ = reply.send(out);
             }
             AudioCommand::Pause { reply } => {
-                let out = engine.pause();
+                let out = engine.pause_manual();
                 let _ = reply.send(Ok(out));
             }
             AudioCommand::SyncTimer {
