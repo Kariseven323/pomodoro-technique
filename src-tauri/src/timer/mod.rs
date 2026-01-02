@@ -6,7 +6,9 @@ pub(crate) mod stats;
 mod validation;
 
 pub use notification::TauriNotifier;
-pub use runtime::{SystemClock, TickResult, TimerClock, TimerRuntime, TimerSnapshot, WorkCompletedEvent};
+pub use runtime::{
+    SystemClock, TickResult, TimerClock, TimerRuntime, TimerSnapshot, WorkCompletedEvent,
+};
 pub use stats::compute_today_stats;
 pub use validation::validate_settings;
 

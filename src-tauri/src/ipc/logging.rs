@@ -43,4 +43,3 @@ fn open_log_dir_impl(app: &tauri::AppHandle) -> AppResult<bool> {
         Ok(true)
     }
 }
-

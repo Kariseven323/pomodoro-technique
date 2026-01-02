@@ -11,7 +11,9 @@ pub(crate) fn set_blacklist_impl<S: CommandState>(
     state: &S,
     blacklist: Vec<BlacklistItem>,
 ) -> AppResult<Vec<BlacklistItem>> {
-    set_blacklist_impl_with_killer(state, blacklist, |names| crate::processes::kill_names_best_effort(names))
+    set_blacklist_impl_with_killer(state, blacklist, |names| {
+        crate::processes::kill_names_best_effort(names)
+    })
 }
 
 /// 设置黑名单的可注入实现：用于在测试中 mock 进程终止逻辑。
@@ -87,9 +89,11 @@ mod tests {
             display_name: "A".to_string(),
         }];
 
-        let out = set_blacklist_impl_with_killer(&state, blacklist.clone(), |_names| crate::processes::KillSummary {
-            items: Vec::new(),
-            requires_admin: false,
+        let out = set_blacklist_impl_with_killer(&state, blacklist.clone(), |_names| {
+            crate::processes::KillSummary {
+                items: Vec::new(),
+                requires_admin: false,
+            }
         })
         .unwrap();
 
@@ -137,9 +141,11 @@ mod tests {
             name: "old.exe".to_string(),
             display_name: "Old".to_string(),
         }];
-        set_blacklist_impl_with_killer(&state, old.clone(), |_names| crate::processes::KillSummary {
-            items: Vec::new(),
-            requires_admin: false,
+        set_blacklist_impl_with_killer(&state, old.clone(), |_names| {
+            crate::processes::KillSummary {
+                items: Vec::new(),
+                requires_admin: false,
+            }
         })
         .unwrap();
 
@@ -157,9 +163,11 @@ mod tests {
         assert!(state.timer_snapshot().blacklist_locked);
 
         // 尝试移除 old：应失败。
-        let err = set_blacklist_impl_with_killer(&state, vec![], |_names| crate::processes::KillSummary {
-            items: Vec::new(),
-            requires_admin: false,
+        let err = set_blacklist_impl_with_killer(&state, vec![], |_names| {
+            crate::processes::KillSummary {
+                items: Vec::new(),
+                requires_admin: false,
+            }
         })
         .unwrap_err();
         assert!(matches!(err, AppError::BlacklistLocked));

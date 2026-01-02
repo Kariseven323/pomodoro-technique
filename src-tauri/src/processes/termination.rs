@@ -279,7 +279,11 @@ mod tests {
     /// `kill_names_best_effort_with`：应合并多个名称的汇总结果，并忽略单个名称的错误。
     #[test]
     fn kill_names_best_effort_merges_and_ignores_errors() {
-        let names = vec!["a.exe".to_string(), "b.exe".to_string(), "bad.exe".to_string()];
+        let names = vec![
+            "a.exe".to_string(),
+            "b.exe".to_string(),
+            "bad.exe".to_string(),
+        ];
         let out = kill_names_best_effort_with(&names, |name| {
             if name == "bad.exe" {
                 return Err(crate::errors::AppError::Invariant("boom".to_string()));

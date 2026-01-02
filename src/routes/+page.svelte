@@ -2,24 +2,39 @@
   import SettingsModal from "$lib/features/settings/SettingsModal.svelte";
   import BlacklistModal from "$lib/features/blacklist/BlacklistModal.svelte";
   import RemarkModal from "$lib/features/timer/RemarkModal.svelte";
+  import InterruptionModal from "$lib/features/timer/InterruptionModal.svelte";
   import MoreMenu from "$lib/features/timer/components/MoreMenu.svelte";
+  import CompletionAnimation from "$lib/features/timer/components/CompletionAnimation.svelte";
   import TimerCard from "$lib/features/timer/components/TimerCard.svelte";
   import StatsCard from "$lib/features/timer/components/StatsCard.svelte";
   import { appData, appError, appLoading, killSummary, timerSnapshot, workCompleted } from "$lib/stores/appClient";
   import { miniMode } from "$lib/stores/uiState";
   import { isTauri } from "@tauri-apps/api/core";
-  import { restartAsAdmin, setHistoryRemark, setMiniMode } from "$lib/api/tauri";
-  import type { AppData, Settings, WorkCompletedEvent } from "$lib/shared/types";
+  import { recordInterruption, restartAsAdmin, setHistoryRemark, setMiniMode } from "$lib/api/tauri";
+  import type {
+    AppData,
+    InterruptionDay,
+    InterruptionRecord,
+    Settings,
+    TimerSnapshot,
+    WorkCompletedEvent,
+  } from "$lib/shared/types";
   import { useBlacklist } from "$lib/composables/useBlacklist";
   import { useSettings } from "$lib/composables/useSettings";
   import { useTags } from "$lib/composables/useTags";
   import { useTimer } from "$lib/composables/useTimer";
   import { useToast } from "$lib/composables/useToast";
+  import { todayYmd } from "$lib/utils/date";
 
   let settingsOpen = $state(false);
   let blacklistOpen = $state(false);
   let remarkOpen = $state(false);
   let remarkEvent = $state<WorkCompletedEvent | null>(null);
+  let interruptionOpen = $state(false);
+  let interruptionAction = $state<"reset" | "skip">("reset");
+  let interruptionTag = $state<string>("");
+  let interruptionFocusedSeconds = $state<bigint>(0n);
+  let interruptionRemainingSeconds = $state<bigint>(0n);
   const { toast: toastMessage, showToast } = useToast();
 
   const timer = useTimer({ showToast });
@@ -38,6 +53,9 @@
     dailyGoal: 8,
     weeklyGoal: 40,
     alwaysOnTop: false,
+    audio: { enabled: true, currentAudioId: "builtin-white-noise", volume: 60, autoPlay: true },
+    animation: { enabled: true, comboEnabled: true, intensity: "standard" },
+    interruption: { enabled: true, confirmOnInterrupt: true },
   };
 
   /** 判断当前是否运行在 Tauri 宿主环境（非纯浏览器 dev server）。 */
@@ -169,14 +187,119 @@
     void timer.toggleStartPause();
   }
 
-  /** 转发“重置”点击到计时器组合式逻辑。 */
-  function handleResetTimer(): void {
-    void timer.resetTimer();
+  /** 计算本次工作阶段已专注秒数（仅用于前端展示/中断弹窗）。 */
+  function focusedSeconds(snapshot: TimerSnapshot): bigint {
+    const total = BigInt(snapshot.settings.pomodoro) * 60n;
+    if (snapshot.remainingSeconds >= total) return 0n;
+    return total - snapshot.remainingSeconds;
   }
 
-  /** 转发“跳过”点击到计时器组合式逻辑。 */
+  /** 判断当前点击是否构成“工作阶段中断”。 */
+  function isWorkInterruption(snapshot: TimerSnapshot): boolean {
+    return snapshot.phase === "work" && snapshot.blacklistLocked;
+  }
+
+  /** 将中断记录追加到全局 `AppData.interruptions`（用于 UI 即时展示）。 */
+  function appendInterruptionToStore(record: InterruptionRecord): void {
+    appData.update((data): AppData | null => {
+      if (!data) return data;
+      const date = record.timestamp.slice(0, 10);
+      const nextDays: InterruptionDay[] = data.interruptions.map((d) => ({ ...d, records: [...d.records] }));
+      const idx = nextDays.findIndex((d) => d.date === date);
+      if (idx >= 0) {
+        nextDays[idx] = { ...nextDays[idx], records: [...nextDays[idx].records, record] };
+      } else {
+        nextDays.push({ date, records: [record] });
+      }
+      return { ...data, interruptions: nextDays, currentCombo: 0 };
+    });
+  }
+
+  /** 打开中断弹窗并准备展示信息。 */
+  function openInterruptionModal(action: "reset" | "skip"): void {
+    const snapshot = $timerSnapshot;
+    if (!snapshot) return;
+    interruptionAction = action;
+    interruptionTag = snapshot.currentTag;
+    interruptionFocusedSeconds = focusedSeconds(snapshot);
+    interruptionRemainingSeconds = snapshot.remainingSeconds;
+    interruptionOpen = true;
+  }
+
+  /** 关闭中断弹窗。 */
+  function closeInterruptionModal(): void {
+    interruptionOpen = false;
+  }
+
+  /** 执行“重置/跳过”并在需要时记录中断。 */
+  async function performInterruptAction(action: "reset" | "skip", record: boolean, reason: string): Promise<void> {
+    const snapshot = $timerSnapshot;
+    if (!snapshot) return;
+    const shouldRecord = Boolean(record && snapshot.settings.interruption.enabled && isWorkInterruption(snapshot));
+
+    // 即使不记录中断，PRD v4 也要求中断后 Combo 重置。
+    if (snapshot && isWorkInterruption(snapshot)) {
+      appData.update((data) => (data ? { ...data, currentCombo: 0 } : data));
+    }
+
+    try {
+      if (shouldRecord) {
+        const r = await recordInterruption(reason, action);
+        appendInterruptionToStore(r);
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e));
+    }
+
+    if (action === "reset") {
+      await timer.resetTimer();
+    } else {
+      await timer.skipTimer();
+    }
+  }
+
+  /** 处理“重置”：若启用中断确认则先弹窗。 */
+  function handleResetTimer(): void {
+    const snapshot = $timerSnapshot;
+    if (!snapshot) return;
+    if (
+      isWorkInterruption(snapshot) &&
+      snapshot.settings.interruption.enabled &&
+      snapshot.settings.interruption.confirmOnInterrupt
+    ) {
+      openInterruptionModal("reset");
+      return;
+    }
+    void performInterruptAction("reset", snapshot.settings.interruption.enabled, "");
+  }
+
+  /** 处理“跳过”：若启用中断确认则先弹窗。 */
   function handleSkipTimer(): void {
-    void timer.skipTimer();
+    const snapshot = $timerSnapshot;
+    if (!snapshot) return;
+    if (
+      isWorkInterruption(snapshot) &&
+      snapshot.settings.interruption.enabled &&
+      snapshot.settings.interruption.confirmOnInterrupt
+    ) {
+      openInterruptionModal("skip");
+      return;
+    }
+    void performInterruptAction("skip", snapshot.settings.interruption.enabled, "");
+  }
+
+  /** 处理中断弹窗确认：根据用户选择决定是否记录与原因。 */
+  function handleInterruptionConfirm(e: CustomEvent<{ record: boolean; reason: string }>): void {
+    interruptionOpen = false;
+    void performInterruptAction(interruptionAction, e.detail.record, e.detail.reason);
+  }
+
+  /** 计算今日中断次数（用于主界面展示）。 */
+  function todayInterruptionCount(): number {
+    const data = $appData;
+    if (!data) return 0;
+    const day = data.interruptions.find((d) => d.date === todayYmd());
+    return day?.records.length ?? 0;
   }
 
   /** 转发“切换置顶”点击到设置组合式逻辑。 */
@@ -242,6 +365,8 @@
       <section class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <TimerCard
           snapshot={$timerSnapshot}
+          combo={$appData.currentCombo ?? 0}
+          todayInterruptions={todayInterruptionCount()}
           requiresAdmin={$killSummary?.requiresAdmin ?? false}
           onToggleStartPause={handleToggleStartPause}
           onReset={handleResetTimer}
@@ -277,3 +402,19 @@
   on:templatesChange={handleTemplatesChange}
 />
 <RemarkModal open={remarkOpen} event={remarkEvent} on:close={closeRemarkModal} on:save={handleRemarkSave} />
+<InterruptionModal
+  open={interruptionOpen}
+  action={interruptionAction}
+  tag={interruptionTag}
+  focusedSeconds={interruptionFocusedSeconds}
+  remainingSeconds={interruptionRemainingSeconds}
+  on:close={closeInterruptionModal}
+  on:confirm={handleInterruptionConfirm}
+/>
+
+{#if $timerSnapshot}
+  <CompletionAnimation
+    enabled={$timerSnapshot.settings.animation.enabled}
+    intensity={$timerSnapshot.settings.animation.intensity}
+  />
+{/if}

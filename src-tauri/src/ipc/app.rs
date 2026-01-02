@@ -55,4 +55,3 @@ fn open_store_dir_impl(app: &tauri::AppHandle) -> AppResult<()> {
         Ok(())
     }
 }
-

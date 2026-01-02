@@ -9,6 +9,8 @@ import type {
   HistoryDay,
   HistoryRecord,
   KillSummary,
+  MilestoneReachedPayload,
+  PomodoroCompletedPayload,
   TimerSnapshot,
   WorkCompletedEvent,
 } from "$lib/shared/types";
@@ -24,6 +26,12 @@ export const killSummary = writable<KillSummary | null>(null);
 
 /** 全局：最近一次“工作阶段完成”事件（用于弹出备注填写）。 */
 export const workCompleted = writable<WorkCompletedEvent | null>(null);
+
+/** 全局：最近一次“番茄完成”事件（用于完成动画）。 */
+export const pomodoroCompleted = writable<PomodoroCompletedPayload | null>(null);
+
+/** 全局：最近一次“里程碑达成”事件（用于提示与庆祝）。 */
+export const milestoneReached = writable<MilestoneReachedPayload | null>(null);
 
 /** 全局：初始化加载状态。 */
 export const appLoading = writable<boolean>(true);
@@ -59,6 +67,15 @@ export function applyWorkCompletedEvent(e: WorkCompletedEvent): void {
       nextHistory.push({ date: e.date, records: [e.record] });
     }
     return { ...data, history: nextHistory };
+  });
+}
+
+/** 将番茄完成事件写入 store，并同步更新 `AppData` 中的 combo/累计番茄数。 */
+export function applyPomodoroCompletedEvent(e: PomodoroCompletedPayload): void {
+  pomodoroCompleted.set(e);
+  appData.update((data): AppData | null => {
+    if (!data) return data;
+    return { ...data, currentCombo: e.combo, totalPomodoros: e.total };
   });
 }
 
@@ -128,8 +145,20 @@ async function registerListeners(): Promise<void> {
     void reloadSnapshotBestEffort();
   }
 
+  /** 处理后端推送的“番茄完成”事件。 */
+  function onPomodoroCompletedEvent(e: TauriEvent<PomodoroCompletedPayload>): void {
+    applyPomodoroCompletedEvent(e.payload);
+  }
+
+  /** 处理后端推送的“里程碑达成”事件。 */
+  function onMilestoneReachedEvent(e: TauriEvent<MilestoneReachedPayload>): void {
+    milestoneReached.set(e.payload);
+  }
+
   unlistenFns.push(await listen<TimerSnapshot>("pomodoro://snapshot", onTimerSnapshotEvent));
   unlistenFns.push(await listen<KillSummary>("pomodoro://kill_result", onKillResultEvent));
   unlistenFns.push(await listen<WorkCompletedEvent>("pomodoro://work_completed", onWorkCompletedEvent));
   unlistenFns.push(await listen<boolean>("pomodoro://history_dev_changed", onHistoryDevChangedEvent));
+  unlistenFns.push(await listen<PomodoroCompletedPayload>("pomodoro-completed", onPomodoroCompletedEvent));
+  unlistenFns.push(await listen<MilestoneReachedPayload>("milestone-reached", onMilestoneReachedEvent));
 }

@@ -15,7 +15,9 @@ pub fn validate_settings(settings: &Settings) -> AppResult<()> {
         return Err(AppError::Validation("长休息需在 1-60 分钟".to_string()));
     }
     if !(1..=10).contains(&settings.long_break_interval) {
-        return Err(AppError::Validation("长休息间隔需在 1-10 个番茄".to_string()));
+        return Err(AppError::Validation(
+            "长休息间隔需在 1-10 个番茄".to_string(),
+        ));
     }
     if !(1..=20).contains(&settings.auto_continue_pomodoros) {
         return Err(AppError::Validation(
@@ -27,6 +29,14 @@ pub fn validate_settings(settings: &Settings) -> AppResult<()> {
     }
     if settings.weekly_goal > 10000 {
         return Err(AppError::Validation("每周目标建议不超过 10000".to_string()));
+    }
+    if settings.audio.enabled && settings.audio.current_audio_id.trim().is_empty() {
+        return Err(AppError::Validation(
+            "启用音效时必须选择一个音效".to_string(),
+        ));
+    }
+    if settings.audio.volume > 100 {
+        return Err(AppError::Validation("音效音量需在 0-100".to_string()));
     }
     Ok(())
 }
@@ -48,6 +58,7 @@ mod tests {
             daily_goal: 0,
             weekly_goal: 0,
             always_on_top: false,
+            ..Settings::default()
         };
         assert!(validate_settings(&settings).is_ok());
     }

@@ -15,4 +15,3 @@ pub fn list_processes() -> Result<Vec<ProcessInfo>, String> {
 pub fn restart_as_admin() -> Result<(), String> {
     to_ipc_result(restart_as_admin_impl())
 }
-

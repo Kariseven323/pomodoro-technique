@@ -100,7 +100,10 @@ pub(crate) fn delete_template_impl<S: CommandState>(state: &S, id: String) -> Ap
 }
 
 /// 应用模板的内部实现：在专注期锁定时禁止切换模板。
-pub(crate) fn apply_template_impl<S: CommandState>(state: &S, id: String) -> AppResult<Vec<BlacklistItem>> {
+pub(crate) fn apply_template_impl<S: CommandState>(
+    state: &S,
+    id: String,
+) -> AppResult<Vec<BlacklistItem>> {
     let id = id.trim().to_string();
     if id.is_empty() {
         return Err(AppError::Validation("模板 id 不能为空".to_string()));
@@ -286,7 +289,10 @@ mod tests {
         let snap = state.data_snapshot();
         assert!(!snap.blacklist_templates.iter().any(|t| t.id == "custom-1"));
         assert!(!snap.active_template_ids.iter().any(|x| x == "custom-1"));
-        assert_eq!(snap.active_template_id.as_deref(), snap.active_template_ids.first().map(|s| s.as_str()));
+        assert_eq!(
+            snap.active_template_id.as_deref(),
+            snap.active_template_ids.first().map(|s| s.as_str())
+        );
     }
 
     /// `delete_template_impl`：空 id 应返回校验错误。
@@ -361,7 +367,10 @@ mod tests {
 
         // 切换启用 custom-1：应生效，并去重 wechat。
         let out = apply_template_impl(&state, "custom-1".to_string()).unwrap();
-        let wechat_count = out.iter().filter(|x| normalize_name(&x.name) == "wechat.exe").count();
+        let wechat_count = out
+            .iter()
+            .filter(|x| normalize_name(&x.name) == "wechat.exe")
+            .count();
         assert_eq!(wechat_count, 1);
         assert!(state
             .data_snapshot()

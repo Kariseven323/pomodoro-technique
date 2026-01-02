@@ -7,7 +7,10 @@ use crate::state::AppState;
 
 /// 获取历史记录（按日期范围筛选；用于历史列表与统计）。
 #[tauri::command]
-pub fn get_history(state: tauri::State<'_, AppState>, range: DateRange) -> Result<Vec<crate::app_data::HistoryDay>, String> {
+pub fn get_history(
+    state: tauri::State<'_, AppState>,
+    range: DateRange,
+) -> Result<Vec<crate::app_data::HistoryDay>, String> {
     to_ipc_result(get_history_impl(&*state, &range))
 }
 

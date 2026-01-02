@@ -5,11 +5,14 @@ import type {
   AppSnapshot,
   BlacklistItem,
   BlacklistTemplate,
+  CustomAudio,
   DateRange,
   ExportRequest,
   FocusAnalysis,
   HistoryDay,
   HistoryRecord,
+  InterruptionRecord,
+  InterruptionStats,
   ProcessInfo,
   Settings,
   StorePaths,
@@ -159,4 +162,54 @@ export async function timerSkip(): Promise<TimerSnapshot> {
 /** Windows：以管理员身份重启应用（用于终止需要提权的进程）。 */
 export async function restartAsAdmin(): Promise<void> {
   return invoke<void>("restart_as_admin");
+}
+
+/** 获取音效列表（内置 + 自定义）。 */
+export async function audioList(): Promise<CustomAudio[]> {
+  return invoke<CustomAudio[]>("audio_list");
+}
+
+/** 播放指定音效（会切换当前选中音效）。 */
+export async function audioPlay(audioId: string): Promise<boolean> {
+  return invoke<boolean>("audio_play", { audioId });
+}
+
+/** 暂停音效播放。 */
+export async function audioPause(): Promise<boolean> {
+  return invoke<boolean>("audio_pause");
+}
+
+/** 设置音效音量（0-100）。 */
+export async function audioSetVolume(volume: number): Promise<boolean> {
+  return invoke<boolean>("audio_set_volume", { volume });
+}
+
+/** 导入自定义音频（后端会复制到音频目录并返回条目）。 */
+export async function audioImport(filePath: string, name: string): Promise<CustomAudio> {
+  return invoke<CustomAudio>("audio_import", { filePath, name });
+}
+
+/** 删除自定义音频（内置不可删除）。 */
+export async function audioDelete(audioId: string): Promise<boolean> {
+  return invoke<boolean>("audio_delete", { audioId });
+}
+
+/** 记录一次中断（PRD v4：reset/skip/quit）。 */
+export async function recordInterruption(reason: string, type: "reset" | "skip" | "quit"): Promise<InterruptionRecord> {
+  return invoke<InterruptionRecord>("record_interruption", { reason, type });
+}
+
+/** 获取中断统计（用于“中断分析”卡片）。 */
+export async function getInterruptionStats(range: DateRange): Promise<InterruptionStats> {
+  return invoke<InterruptionStats>("get_interruption_stats", { range });
+}
+
+/** 获取当前 Combo 数。 */
+export async function getCombo(): Promise<number> {
+  return invoke<number>("get_combo");
+}
+
+/** 获取累计完成番茄总数。 */
+export async function getTotalPomodoros(): Promise<bigint> {
+  return invoke<bigint>("get_total_pomodoros");
 }

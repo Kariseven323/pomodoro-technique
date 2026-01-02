@@ -57,6 +57,117 @@ pub struct Settings {
     /// 窗口是否置顶（主窗口）。
     #[serde(default)]
     pub always_on_top: bool,
+    /// 音效设置（PRD v4）。
+    #[serde(default)]
+    pub audio: AudioSettings,
+    /// 动画设置（PRD v4）。
+    #[serde(default)]
+    pub animation: AnimationSettings,
+    /// 中断设置（PRD v4）。
+    #[serde(default)]
+    pub interruption: InterruptionSettings,
+}
+
+/// 音效设置（白噪音/专注音乐）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct AudioSettings {
+    /// 是否启用音效。
+    pub enabled: bool,
+    /// 当前选中的音效 id。
+    pub current_audio_id: String,
+    /// 音量（0-100）。
+    pub volume: u8,
+    /// 是否随番茄自动播放。
+    pub auto_play: bool,
+}
+
+/// 默认内置音效 id（白噪音）。
+fn default_audio_id() -> String {
+    "builtin-white-noise".to_string()
+}
+
+/// 默认音量（0-100）。
+fn default_audio_volume() -> u8 {
+    60
+}
+
+impl Default for AudioSettings {
+    /// PRD v4 默认音效设置：默认启用、白噪音、音量 60、随番茄自动播放。
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            current_audio_id: default_audio_id(),
+            volume: default_audio_volume(),
+            auto_play: true,
+        }
+    }
+}
+
+/// 动画强度（PRD v4：minimal / standard / fancy）。
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum AnimationIntensity {
+    /// 简约。
+    Minimal,
+    /// 标准。
+    Standard,
+    /// 华丽。
+    Fancy,
+}
+
+impl Default for AnimationIntensity {
+    /// 默认动画强度：标准。
+    fn default() -> Self {
+        Self::Standard
+    }
+}
+
+/// 完成动画设置（番茄完成庆祝 + Combo）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct AnimationSettings {
+    /// 是否启用完成动画。
+    pub enabled: bool,
+    /// 是否启用 Combo 显示。
+    pub combo_enabled: bool,
+    /// 动画强度。
+    pub intensity: AnimationIntensity,
+}
+
+impl Default for AnimationSettings {
+    /// PRD v4 默认动画设置：启用完成动画 + 启用 Combo + 标准强度。
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            combo_enabled: true,
+            intensity: AnimationIntensity::Standard,
+        }
+    }
+}
+
+/// 中断设置（PRD v4：中断记录/弹窗确认）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct InterruptionSettings {
+    /// 是否记录中断。
+    pub enabled: bool,
+    /// 中断时是否弹窗确认。
+    pub confirm_on_interrupt: bool,
+}
+
+impl Default for InterruptionSettings {
+    /// PRD v4 默认中断设置：记录中断 + 弹窗确认。
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            confirm_on_interrupt: true,
+        }
+    }
 }
 
 /// 默认连续番茄数量（用于旧版本数据缺失字段时的兼容回填）。
@@ -87,8 +198,69 @@ impl Default for Settings {
             daily_goal: default_daily_goal(),
             weekly_goal: default_weekly_goal(),
             always_on_top: false,
+            audio: AudioSettings::default(),
+            animation: AnimationSettings::default(),
+            interruption: InterruptionSettings::default(),
         }
     }
+}
+
+/// 自定义/内置音频条目。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct CustomAudio {
+    /// 音频 id（uuid）。
+    pub id: String,
+    /// 显示名称。
+    pub name: String,
+    /// 文件名（存储在 audio 目录）。
+    pub file_name: String,
+    /// 是否内置。
+    pub builtin: bool,
+}
+
+/// 中断类型（PRD v4：reset/skip/quit）。
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum InterruptionType {
+    /// 重置中断。
+    Reset,
+    /// 跳过中断。
+    Skip,
+    /// 退出中断。
+    Quit,
+}
+
+/// 中断记录（PRD v4）。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct InterruptionRecord {
+    /// 中断时间（ISO 8601）。
+    pub timestamp: String,
+    /// 中断时剩余秒数。
+    pub remaining_seconds: u64,
+    /// 已专注秒数。
+    pub focused_seconds: u64,
+    /// 中断原因（用户填写，可为空）。
+    pub reason: String,
+    /// 中断类型。
+    pub r#type: InterruptionType,
+    /// 当时的任务标签。
+    pub tag: String,
+}
+
+/// 某一天的中断集合。
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct InterruptionDay {
+    /// 日期（YYYY-MM-DD）。
+    pub date: String,
+    /// 当日中断记录集合。
+    pub records: Vec<InterruptionRecord>,
 }
 
 /// 黑名单条目（以进程名为主键）。
@@ -186,6 +358,18 @@ pub struct AppData {
     /// 调试历史记录（仅开发环境使用，与正式数据隔离）。
     #[serde(default)]
     pub history_dev: Vec<HistoryDay>,
+    /// 自定义音频列表。
+    #[serde(default)]
+    pub custom_audios: Vec<CustomAudio>,
+    /// 中断记录（按日分组）。
+    #[serde(default)]
+    pub interruptions: Vec<InterruptionDay>,
+    /// 当前 Combo 数（运行时状态，可选持久化）。
+    #[serde(default)]
+    pub current_combo: u32,
+    /// 累计完成番茄总数（用于里程碑）。
+    #[serde(default)]
+    pub total_pomodoros: u64,
 }
 
 impl Default for AppData {
@@ -213,6 +397,10 @@ impl Default for AppData {
             ],
             history: Vec::new(),
             history_dev: Vec::new(),
+            custom_audios: Vec::new(),
+            interruptions: Vec::new(),
+            current_combo: 0,
+            total_pomodoros: 0,
         }
     }
 }
@@ -239,6 +427,30 @@ impl AppData {
         if self.active_template_id != first {
             self.active_template_id = first;
             changed = true;
+        }
+
+        changed
+    }
+
+    /// 将旧版本数据迁移到 v4 结构（回填缺失字段、修复默认音效与累计番茄数）。
+    pub fn migrate_v4(&mut self) -> bool {
+        let mut changed = false;
+
+        if self.settings.audio.current_audio_id.trim().is_empty() {
+            self.settings.audio.current_audio_id = default_audio_id();
+            changed = true;
+        }
+
+        if self.total_pomodoros == 0 {
+            let total_from_history = self
+                .history
+                .iter()
+                .map(|d| d.records.len() as u64)
+                .sum::<u64>();
+            if total_from_history > 0 {
+                self.total_pomodoros = total_from_history;
+                changed = true;
+            }
         }
 
         changed
@@ -381,6 +593,15 @@ mod tests {
         assert_eq!(s.daily_goal, 8);
         assert_eq!(s.weekly_goal, 40);
         assert_eq!(s.always_on_top, false);
+        assert!(s.audio.enabled);
+        assert_eq!(s.audio.current_audio_id, "builtin-white-noise");
+        assert_eq!(s.audio.volume, 60);
+        assert!(s.audio.auto_play);
+        assert!(s.animation.enabled);
+        assert!(s.animation.combo_enabled);
+        assert_eq!(s.animation.intensity, AnimationIntensity::Standard);
+        assert!(s.interruption.enabled);
+        assert!(s.interruption.confirm_on_interrupt);
     }
 
     /// `builtin_templates`：应包含固定的内置模板集合，且均标记为 builtin。
@@ -404,7 +625,10 @@ mod tests {
         let data = AppData::default();
 
         assert!(!data.blacklist_templates.is_empty());
-        assert_eq!(data.active_template_ids.first().map(|s| s.as_str()), Some("work"));
+        assert_eq!(
+            data.active_template_ids.first().map(|s| s.as_str()),
+            Some("work")
+        );
         assert_eq!(data.active_template_id.as_deref(), Some("work"));
 
         let work_template = data
@@ -416,7 +640,12 @@ mod tests {
 
         assert_eq!(
             data.tags,
-            vec!["工作".to_string(), "学习".to_string(), "阅读".to_string(), "写作".to_string()]
+            vec![
+                "工作".to_string(),
+                "学习".to_string(),
+                "阅读".to_string(),
+                "写作".to_string()
+            ]
         );
         assert!(data.history.is_empty());
     }

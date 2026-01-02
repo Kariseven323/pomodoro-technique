@@ -9,7 +9,10 @@ use crate::state::AppState;
 
 /// 更新设置（带范围校验），并在必要时重置当前阶段的剩余时间。
 #[tauri::command]
-pub fn update_settings(state: tauri::State<'_, AppState>, settings: Settings) -> Result<AppSnapshot, String> {
+pub fn update_settings(
+    state: tauri::State<'_, AppState>,
+    settings: Settings,
+) -> Result<AppSnapshot, String> {
     to_ipc_result((|| -> AppResult<AppSnapshot> {
         let out = update_settings_ipc_impl(&*state, settings)?;
         let _ = crate::tray::refresh_tray(&*state);
@@ -19,7 +22,11 @@ pub fn update_settings(state: tauri::State<'_, AppState>, settings: Settings) ->
 
 /// 设置每日/每周目标（0 表示不设目标），并持久化到 settings。
 #[tauri::command]
-pub fn set_goals(state: tauri::State<'_, AppState>, daily: u32, weekly: u32) -> Result<Settings, String> {
+pub fn set_goals(
+    state: tauri::State<'_, AppState>,
+    daily: u32,
+    weekly: u32,
+) -> Result<Settings, String> {
     to_ipc_result(set_goals_ipc_impl(&*state, daily, weekly))
 }
 
@@ -32,4 +39,3 @@ fn update_settings_ipc_impl(state: &AppState, settings: Settings) -> AppResult<A
 fn set_goals_ipc_impl(state: &AppState, daily: u32, weekly: u32) -> AppResult<Settings> {
     set_goals_impl(state, daily, weekly)
 }
-

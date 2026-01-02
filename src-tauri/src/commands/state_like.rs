@@ -23,7 +23,10 @@ pub(crate) trait CommandState {
     fn update_data(&self, f: impl FnOnce(&mut AppData) -> AppResult<()>) -> AppResult<()>;
 
     /// 修改计时器运行态（测试实现可直接更新内存）。
-    fn update_timer(&self, f: impl FnOnce(&mut TimerRuntime, &AppData) -> AppResult<()>) -> AppResult<()>;
+    fn update_timer(
+        &self,
+        f: impl FnOnce(&mut TimerRuntime, &AppData) -> AppResult<()>,
+    ) -> AppResult<()>;
 
     /// 同时修改 `AppData` 与 `TimerRuntime`（并可控制是否持久化）。
     fn update_data_and_timer<T>(
@@ -60,7 +63,10 @@ impl CommandState for AppState {
     }
 
     /// 修改计时器运行态（不会持久化）。
-    fn update_timer(&self, f: impl FnOnce(&mut TimerRuntime, &AppData) -> AppResult<()>) -> AppResult<()> {
+    fn update_timer(
+        &self,
+        f: impl FnOnce(&mut TimerRuntime, &AppData) -> AppResult<()>,
+    ) -> AppResult<()> {
         AppState::update_timer(self, f)
     }
 
@@ -156,7 +162,10 @@ impl CommandState for TestState {
     }
 
     /// 修改计时器运行态（测试实现直接更新内存）。
-    fn update_timer(&self, f: impl FnOnce(&mut TimerRuntime, &AppData) -> AppResult<()>) -> AppResult<()> {
+    fn update_timer(
+        &self,
+        f: impl FnOnce(&mut TimerRuntime, &AppData) -> AppResult<()>,
+    ) -> AppResult<()> {
         let data = self.data.lock().unwrap();
         let mut timer = self.timer.lock().unwrap();
         f(&mut timer, &data)

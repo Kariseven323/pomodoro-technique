@@ -7,6 +7,9 @@
   import AutoContinueSection from "$lib/features/settings/components/AutoContinueSection.svelte";
   import GoalsSection from "$lib/features/settings/components/GoalsSection.svelte";
   import StorePathsSection from "$lib/features/settings/components/StorePathsSection.svelte";
+  import AudioSettings from "$lib/features/settings/components/AudioSettings.svelte";
+  import AnimationSettings from "$lib/features/settings/components/AnimationSettings.svelte";
+  import InterruptionSettings from "$lib/features/settings/components/InterruptionSettings.svelte";
 
   const props = $props<{ open: boolean; settings: Settings }>();
 
@@ -25,6 +28,9 @@
     dailyGoal: 8,
     weeklyGoal: 40,
     alwaysOnTop: false,
+    audio: { enabled: true, currentAudioId: "builtin-white-noise", volume: 60, autoPlay: true },
+    animation: { enabled: true, comboEnabled: true, intensity: "standard" },
+    interruption: { enabled: true, confirmOnInterrupt: true },
   });
 
   let wasOpen = $state(false);
@@ -92,6 +98,24 @@
             bind:dailyGoal={draft.dailyGoal}
             bind:weeklyGoal={draft.weeklyGoal}
             bind:alwaysOnTop={draft.alwaysOnTop}
+          />
+
+          <AudioSettings
+            open={props.open}
+            bind:enabled={draft.audio.enabled}
+            bind:currentAudioId={draft.audio.currentAudioId}
+            bind:autoPlay={draft.audio.autoPlay}
+          />
+
+          <AnimationSettings
+            bind:enabled={draft.animation.enabled}
+            bind:comboEnabled={draft.animation.comboEnabled}
+            bind:intensity={draft.animation.intensity}
+          />
+
+          <InterruptionSettings
+            bind:enabled={draft.interruption.enabled}
+            bind:confirmOnInterrupt={draft.interruption.confirmOnInterrupt}
           />
 
           <StorePathsSection open={props.open} />

@@ -2,11 +2,16 @@
 
 pub use crate::analysis::{FocusAnalysis, TagEfficiency};
 pub use crate::app_data::{
-    AppData, BlacklistItem, BlacklistTemplate, DateRange, HistoryDay, HistoryRecord, Phase,
-    Settings,
+    AnimationIntensity, AnimationSettings, AppData, AudioSettings, BlacklistItem,
+    BlacklistTemplate, CustomAudio, DateRange, HistoryDay, HistoryRecord, InterruptionDay,
+    InterruptionRecord, InterruptionSettings, InterruptionType, Phase, Settings,
 };
-pub use crate::commands::types::{AppSnapshot, ExportField, ExportFormat, ExportRequest, StorePaths};
-pub use crate::processes::{KillSummary, ProcessInfo};
+pub use crate::commands::types::{
+    AppSnapshot, ExportField, ExportFormat, ExportRequest, StorePaths,
+};
+pub use crate::events::{MilestoneReachedPayload, PomodoroCompletedPayload};
+pub use crate::interruptions::{InterruptionReasonCount, InterruptionStats};
 pub use crate::processes::termination::KillItem;
-pub use crate::timer::{TimerSnapshot, WorkCompletedEvent};
+pub use crate::processes::{KillSummary, ProcessInfo};
 pub use crate::timer::stats::{GoalProgress, TagCount, TodayStats, WeekStats};
+pub use crate::timer::{TimerSnapshot, WorkCompletedEvent};

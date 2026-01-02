@@ -294,7 +294,10 @@ mod tests {
 
         let content = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
-        assert_eq!(lines[0], "date,start_time,end_time,duration,tag,phase,remark");
+        assert_eq!(
+            lines[0],
+            "date,start_time,end_time,duration,tag,phase,remark"
+        );
         assert_eq!(lines[1], "2025-01-01,09:00,09:25,25,A,work,hi");
     }
 

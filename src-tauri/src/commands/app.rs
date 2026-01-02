@@ -23,8 +23,10 @@ mod tests {
     #[test]
     fn get_store_paths_returns_root_dir_path() {
         let app = tauri::test::mock_app();
-        let expected =
-            app_paths::app_root_dir(app.handle()).unwrap().to_string_lossy().to_string();
+        let expected = app_paths::app_root_dir(app.handle())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
 
         let out = get_store_paths_impl(app.handle()).unwrap();
         assert_eq!(out.store_dir_path, expected);

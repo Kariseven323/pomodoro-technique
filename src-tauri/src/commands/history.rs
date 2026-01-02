@@ -7,7 +7,10 @@ use super::state_like::CommandState;
 use super::validation::{history_for_ui, history_for_ui_mut, validate_date_range, validate_ymd};
 
 /// 获取历史的内部实现：校验日期范围后按 `YYYY-MM-DD` 字符串过滤（闭区间）。
-pub(crate) fn get_history_impl<S: CommandState>(state: &S, range: &DateRange) -> AppResult<Vec<HistoryDay>> {
+pub(crate) fn get_history_impl<S: CommandState>(
+    state: &S,
+    range: &DateRange,
+) -> AppResult<Vec<HistoryDay>> {
     validate_date_range(range)?;
 
     let data = state.data_snapshot();

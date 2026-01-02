@@ -20,6 +20,9 @@ pub fn set_blacklist(
 }
 
 /// IPC 内部实现：复用 `commands::blacklist` 的可测试实现。
-fn set_blacklist_ipc_impl(state: &AppState, blacklist: Vec<BlacklistItem>) -> AppResult<Vec<BlacklistItem>> {
+fn set_blacklist_ipc_impl(
+    state: &AppState,
+    blacklist: Vec<BlacklistItem>,
+) -> AppResult<Vec<BlacklistItem>> {
     set_blacklist_impl(state, blacklist)
 }

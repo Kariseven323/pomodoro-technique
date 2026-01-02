@@ -1,8 +1,8 @@
 //! 调试相关命令：生成/清除测试历史数据（PRD v3）。
 
+use super::state_like::CommandState;
 use crate::app_data::{HistoryDay, HistoryRecord, Phase, Settings};
 use crate::errors::{AppError, AppResult};
-use super::state_like::CommandState;
 
 /// 向前端广播“调试历史数据变更”的事件名（用于自动刷新历史页面）。
 pub const EVENT_HISTORY_DEV_CHANGED: &str = "pomodoro://history_dev_changed";
@@ -37,7 +37,10 @@ pub(crate) fn debug_generate_history_impl<S: CommandState>(state: &S, days: u32)
 
 /// 生成调试历史数据的内部实现：非开发环境直接拒绝（避免 release 包携带调试功能）。
 #[cfg(not(debug_assertions))]
-pub(crate) fn debug_generate_history_impl<S: CommandState>(_state: &S, _days: u32) -> AppResult<u32> {
+pub(crate) fn debug_generate_history_impl<S: CommandState>(
+    _state: &S,
+    _days: u32,
+) -> AppResult<u32> {
     Err(AppError::Validation("仅开发环境可使用调试模式".to_string()))
 }
 
@@ -199,7 +202,10 @@ mod tests {
         let count = debug_generate_history_impl(&state, 7).unwrap();
         assert!(count > 0);
         assert!(!state.data_snapshot().history_dev.is_empty());
-        assert!(state.take_events().iter().any(|e| e == EVENT_HISTORY_DEV_CHANGED));
+        assert!(state
+            .take_events()
+            .iter()
+            .any(|e| e == EVENT_HISTORY_DEV_CHANGED));
     }
 
     /// `debug_clear_history_impl`：应清空 `history_dev` 并触发刷新事件。
@@ -215,7 +221,10 @@ mod tests {
         let ok = debug_clear_history_impl(&state).unwrap();
         assert!(ok);
         assert!(state.data_snapshot().history_dev.is_empty());
-        assert!(state.take_events().iter().any(|e| e == EVENT_HISTORY_DEV_CHANGED));
+        assert!(state
+            .take_events()
+            .iter()
+            .any(|e| e == EVENT_HISTORY_DEV_CHANGED));
     }
 
     /// `debug_generate_history_impl`：非法天数范围应返回校验错误。

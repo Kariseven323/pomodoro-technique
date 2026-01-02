@@ -179,7 +179,19 @@ mod tests {
 
         let out = compute_week_stats(&data, "2025-01-01", "2025-01-07");
         assert_eq!(out.total, 3);
-        assert_eq!(out.by_tag, vec![TagCount { tag: "A".to_string(), count: 2 }, TagCount { tag: "B".to_string(), count: 1 }]);
+        assert_eq!(
+            out.by_tag,
+            vec![
+                TagCount {
+                    tag: "A".to_string(),
+                    count: 2
+                },
+                TagCount {
+                    tag: "B".to_string(),
+                    count: 1
+                }
+            ]
+        );
     }
 
     /// `compute_today_stats`：当指定日期不存在时应返回 0 与空分组。

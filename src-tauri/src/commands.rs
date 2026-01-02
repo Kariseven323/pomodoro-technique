@@ -10,10 +10,10 @@ pub mod history;
 pub mod logging;
 pub mod processes;
 pub mod settings;
+mod state_like;
 pub mod tags;
 pub mod templates;
 pub mod timer;
-mod state_like;
-mod validation;
+pub(crate) mod validation;
 
 pub mod types;

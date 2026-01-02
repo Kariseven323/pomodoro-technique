@@ -45,6 +45,13 @@ pub fn app_log_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<Pa
     Ok(app_root_dir(app)?.join("logs"))
 }
 
+/// 获取音频目录（位于统一入口根目录下的 `audio/`）。
+///
+/// PRD v4：自定义音频导入后会被复制到该目录下。
+pub fn app_audio_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<PathBuf> {
+    Ok(app_root_dir(app)?.join("audio"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +80,6 @@ mod tests {
             root.join("data").join(STORE_FILE_NAME)
         );
         assert_eq!(app_log_dir(app.handle()).unwrap(), root.join("logs"));
+        assert_eq!(app_audio_dir(app.handle()).unwrap(), root.join("audio"));
     }
 }

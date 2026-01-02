@@ -5,10 +5,13 @@ use std::path::PathBuf;
 use ts_rs::TS as _;
 
 use tauri_app_lib::typegen::{
-    AppData, AppSnapshot, BlacklistItem, BlacklistTemplate, DateRange, ExportField, ExportFormat,
-    ExportRequest, FocusAnalysis, GoalProgress, HistoryDay, HistoryRecord, KillSummary, Phase,
-    KillItem, ProcessInfo, Settings, StorePaths, TagCount, TagEfficiency, TimerSnapshot, TodayStats,
-    WeekStats, WorkCompletedEvent,
+    AnimationIntensity, AnimationSettings, AppData, AppSnapshot, AudioSettings, BlacklistItem,
+    BlacklistTemplate, CustomAudio, DateRange, ExportField, ExportFormat, ExportRequest,
+    FocusAnalysis, GoalProgress, HistoryDay, HistoryRecord, InterruptionDay,
+    InterruptionReasonCount, InterruptionRecord, InterruptionSettings, InterruptionStats,
+    InterruptionType, KillItem, KillSummary, MilestoneReachedPayload, Phase,
+    PomodoroCompletedPayload, ProcessInfo, Settings, StorePaths, TagCount, TagEfficiency,
+    TimerSnapshot, TodayStats, WeekStats, WorkCompletedEvent,
 };
 
 /// 解析输出路径参数：支持 `--out <path>`，否则写入默认位置。
@@ -32,13 +35,23 @@ fn build_types_file() -> String {
     out.push_str("/**\n");
     out.push_str(" * 本文件由 `cargo run --bin gen_ts_types` 自动生成，请勿手动编辑。\n");
     out.push_str(" *\n");
-    out.push_str(" * 生成来源：Rust 端 `ts-rs` derive（序列化字段名与前端保持 camelCase 一致）。\n");
+    out.push_str(
+        " * 生成来源：Rust 端 `ts-rs` derive（序列化字段名与前端保持 camelCase 一致）。\n",
+    );
     out.push_str(" */\n\n");
 
     // PRD 数据结构（AppData + TimerSnapshot + 进程/分析/导出等命令类型）。
     out.push_str(&exported_decl(&Phase::decl()));
     out.push('\n');
     out.push_str(&exported_decl(&Settings::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&AudioSettings::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&AnimationIntensity::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&AnimationSettings::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&InterruptionSettings::decl()));
     out.push('\n');
     out.push_str(&exported_decl(&BlacklistItem::decl()));
     out.push('\n');
@@ -47,6 +60,14 @@ fn build_types_file() -> String {
     out.push_str(&exported_decl(&HistoryRecord::decl()));
     out.push('\n');
     out.push_str(&exported_decl(&HistoryDay::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&CustomAudio::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&InterruptionType::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&InterruptionRecord::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&InterruptionDay::decl()));
     out.push('\n');
     out.push_str(&exported_decl(&AppData::decl()));
     out.push('\n');
@@ -84,11 +105,21 @@ fn build_types_file() -> String {
     out.push_str(&exported_decl(&FocusAnalysis::decl()));
     out.push('\n');
 
+    out.push_str(&exported_decl(&InterruptionReasonCount::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&InterruptionStats::decl()));
+    out.push('\n');
+
     out.push_str(&exported_decl(&ExportFormat::decl()));
     out.push('\n');
     out.push_str(&exported_decl(&ExportField::decl()));
     out.push('\n');
     out.push_str(&exported_decl(&ExportRequest::decl()));
+    out.push('\n');
+
+    out.push_str(&exported_decl(&PomodoroCompletedPayload::decl()));
+    out.push('\n');
+    out.push_str(&exported_decl(&MilestoneReachedPayload::decl()));
     out.push('\n');
 
     out

@@ -44,4 +44,3 @@ fn export_history_ipc_impl(
     tracing::info!(target: "storage", "导出历史成功：path={}", path.to_string_lossy());
     Ok(path.to_string_lossy().to_string())
 }
-

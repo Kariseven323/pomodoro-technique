@@ -18,7 +18,11 @@ pub fn set_always_on_top(
 }
 
 /// 设置置顶的内部实现：修改窗口并写入 settings。
-fn set_always_on_top_impl(app: &tauri::AppHandle, state: &AppState, enabled: bool) -> AppResult<bool> {
+fn set_always_on_top_impl(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    enabled: bool,
+) -> AppResult<bool> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| AppError::Invariant("主窗口 `main` 不存在".to_string()))?;
@@ -95,14 +99,14 @@ fn set_mini_mode_impl(app: &tauri::AppHandle, state: &AppState, enabled: bool) -
 
 /// 退出应用（用于迷你模式右键菜单）。
 #[tauri::command]
-pub fn exit_app(app: tauri::AppHandle) -> Result<bool, String> {
-    to_ipc_result(exit_app_impl(&app))
+pub fn exit_app(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    to_ipc_result(exit_app_impl(&app, &state))
 }
 
 /// 退出应用的内部实现：请求 Tauri 退出。
-fn exit_app_impl(app: &tauri::AppHandle) -> AppResult<bool> {
+fn exit_app_impl(app: &tauri::AppHandle, state: &AppState) -> AppResult<bool> {
+    let _ = state.record_quit_interruption_before_exit();
     tracing::info!(target: "system", "请求退出应用");
     app.exit(0);
     Ok(true)
 }
-

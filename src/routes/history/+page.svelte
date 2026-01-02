@@ -4,8 +4,16 @@
   import { appData, historyDevChangedAt, timerSnapshot } from "$lib/stores/appClient";
   import ExportModal from "$lib/features/history/ExportModal.svelte";
   import FocusAnalysisView from "$lib/features/history/FocusAnalysis.svelte";
+  import InterruptionStatsView from "$lib/features/history/InterruptionStats.svelte";
   import HistoryCalendar from "$lib/features/history/HistoryCalendar.svelte";
-  import { exportHistory, getFocusAnalysis, getHistory, setHistoryRemark, setMiniMode } from "$lib/api/tauri";
+  import {
+    exportHistory,
+    getFocusAnalysis,
+    getHistory,
+    getInterruptionStats,
+    setHistoryRemark,
+    setMiniMode,
+  } from "$lib/api/tauri";
   import { miniMode } from "$lib/stores/uiState";
   import type {
     DateRange,
@@ -15,10 +23,15 @@
     FocusAnalysis,
     HistoryDay,
     HistoryRecord,
+    InterruptionDay,
+    InterruptionRecord,
+    InterruptionStats,
   } from "$lib/shared/types";
   import { addDays, endOfMonthYmd, startOfMonthYmd, startOfWeekYmd, todayYmd } from "$lib/utils/date";
+  import { formatMmSs } from "$lib/utils/time";
 
   type ViewMode = "day" | "week" | "month";
+  type CombinedDay = { date: string; records: HistoryRecord[]; interruptions: InterruptionRecord[] };
 
   let viewMode = $state<ViewMode>("week");
   let selectedDate = $state<string>(todayYmd());
@@ -39,6 +52,10 @@
   let analysisLoading = $state(false);
   let analysisError = $state<string | null>(null);
 
+  let interruptionStats = $state<InterruptionStats | null>(null);
+  let interruptionLoading = $state(false);
+  let interruptionError = $state<string | null>(null);
+
   let remarkDrafts = $state<Record<string, string>>({});
   let remarkSavingKey = $state<string | null>(null);
   let expandedDates = $state<Set<string>>(new Set());
@@ -51,6 +68,50 @@
     }
     return out;
   }
+
+  /** 在当前 range 内筛选中断记录（按日分组）。 */
+  function interruptionDaysInRange(all: InterruptionDay[], r: DateRange): InterruptionDay[] {
+    return all.filter((d) => d.date >= r.from && d.date <= r.to);
+  }
+
+  /** 合并“完成记录 + 中断记录”为统一的按日结构（用于历史列表展示）。 */
+  function mergeDays(historyDays: HistoryDay[], interruptionDays: InterruptionDay[]): CombinedDay[] {
+    const map = new Map<string, CombinedDay>();
+    for (const d of historyDays) {
+      map.set(d.date, { date: d.date, records: d.records, interruptions: [] });
+    }
+    for (const d of interruptionDays) {
+      const prev = map.get(d.date);
+      if (prev) {
+        prev.interruptions = d.records;
+      } else {
+        map.set(d.date, { date: d.date, records: [], interruptions: d.records });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  /** 从 ISO 时间戳提取本地 `HH:mm`（失败则回退为 `--:--`）。 */
+  function hhmmFromIso(ts: string): string {
+    try {
+      const dt = new Date(ts);
+      const h = String(dt.getHours()).padStart(2, "0");
+      const m = String(dt.getMinutes()).padStart(2, "0");
+      return `${h}:${m}`;
+    } catch {
+      return "--:--";
+    }
+  }
+
+  /** 在工作阶段中断类型映射为更友好的中文文案。 */
+  function interruptionTypeText(t: InterruptionRecord["type"]): string {
+    if (t === "reset") return "重置";
+    if (t === "skip") return "跳过";
+    return "退出";
+  }
+
+  /** 当前展示用的“合并日列表”（历史 + 中断）。 */
+  let combinedDays = $derived(mergeDays(days, interruptionDaysInRange($appData?.interruptions ?? [], range)));
 
   /** 进入导出：打开弹窗并清理上次提示。 */
   function openExport(): void {
@@ -133,6 +194,7 @@
     }
     void refreshHistory();
     void refreshAnalysis();
+    void refreshInterruptionStats();
   }
 
   /** 在日历上选择日期：切到 day 视图并加载。 */
@@ -142,6 +204,7 @@
     range = { from: selectedDate, to: selectedDate };
     void refreshHistory();
     void refreshAnalysis();
+    void refreshInterruptionStats();
   }
 
   /** 切换某一天的展开/收起状态。 */
@@ -176,6 +239,20 @@
       analysis = null;
     } finally {
       analysisLoading = false;
+    }
+  }
+
+  /** 拉取中断分析。 */
+  async function refreshInterruptionStats(): Promise<void> {
+    interruptionLoading = true;
+    interruptionError = null;
+    try {
+      interruptionStats = await getInterruptionStats(range);
+    } catch (e) {
+      interruptionError = e instanceof Error ? e.message : String(e);
+      interruptionStats = null;
+    } finally {
+      interruptionLoading = false;
     }
   }
 
@@ -251,6 +328,7 @@
   function onMounted(): void {
     void refreshHistory();
     void refreshAnalysis();
+    void refreshInterruptionStats();
   }
 
   onMount(onMounted);
@@ -260,6 +338,7 @@
     if ($historyDevChangedAt <= 0) return;
     void refreshHistory();
     void refreshAnalysis();
+    void refreshInterruptionStats();
   }
 
   $effect(onHistoryDevChangedEffect);
@@ -401,7 +480,7 @@
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="text-sm font-medium text-zinc-900 dark:text-zinc-50">记录列表</div>
           <div class="text-xs text-zinc-600 dark:text-zinc-300">
-            {#if loading}加载中...{:else}{days.length} 天{/if}
+            {#if loading}加载中...{:else}{combinedDays.length} 天{/if}
           </div>
         </div>
 
@@ -412,10 +491,10 @@
             <div class="rounded-2xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">
               加载失败：{historyError}
             </div>
-          {:else if days.length === 0}
+          {:else if combinedDays.length === 0}
             <div class="text-sm text-zinc-500 dark:text-zinc-400">暂无历史记录</div>
           {:else}
-            {#each days as d (d.date)}
+            {#each combinedDays as d (d.date)}
               <div class="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
                 <button
                   type="button"
@@ -424,7 +503,8 @@
                 >
                   <div class="text-sm font-medium text-zinc-900 dark:text-zinc-50">{d.date}</div>
                   <div class="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
-                    <span>{d.records.length} 条</span>
+                    <span>完成 {d.records.length}</span>
+                    <span>中断 {d.interruptions.length}</span>
                     <span>{expandedDates.has(d.date) ? "收起" : "展开"}</span>
                   </div>
                 </button>
@@ -458,6 +538,33 @@
                         </div>
                       </div>
                     {/each}
+
+                    {#if d.interruptions.length > 0}
+                      <div class="mt-3">
+                        <div class="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">中断记录</div>
+                        <div class="space-y-2">
+                          {#each d.interruptions as it, ii (it.timestamp + ii)}
+                            <div
+                              class="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm dark:border-red-500/20"
+                            >
+                              <div class="min-w-0">
+                                <div class="truncate font-medium text-zinc-900 dark:text-zinc-50">
+                                  中断 · {interruptionTypeText(it.type)}
+                                </div>
+                                <div class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+                                  {hhmmFromIso(it.timestamp)} · 已专注 {formatMmSs(it.focusedSeconds)} · 剩余
+                                  {formatMmSs(it.remainingSeconds)}
+                                </div>
+                                <div class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">标签：{it.tag}</div>
+                                {#if it.reason.trim()}
+                                  <div class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">原因：{it.reason}</div>
+                                {/if}
+                              </div>
+                            </div>
+                          {/each}
+                        </div>
+                      </div>
+                    {/if}
                   </div>
                 {/if}
               </div>
@@ -473,11 +580,19 @@
       </div>
     </div>
 
-    <div
-      class="mt-4 rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60"
-    >
-      <div class="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-50">专注时段分析</div>
-      <FocusAnalysisView {analysis} loading={analysisLoading} error={analysisError} />
+    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div
+        class="rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60"
+      >
+        <div class="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-50">专注时段分析</div>
+        <FocusAnalysisView {analysis} loading={analysisLoading} error={analysisError} />
+      </div>
+      <div
+        class="rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60"
+      >
+        <div class="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-50">中断分析</div>
+        <InterruptionStatsView stats={interruptionStats} loading={interruptionLoading} error={interruptionError} />
+      </div>
     </div>
   </div>
 </main>

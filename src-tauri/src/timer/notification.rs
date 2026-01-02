@@ -25,7 +25,12 @@ impl Notifier for TauriNotifier<'_> {
     /// 发送系统通知（失败时返回 `AppError::Notification`）。
     fn notify(&self, title: &str, body: &str) -> AppResult<()> {
         use tauri_plugin_notification::NotificationExt as _;
-        self.app.notification().builder().title(title).body(body).show()?;
+        self.app
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()?;
         Ok(())
     }
 }
@@ -40,7 +45,10 @@ pub fn notify_phase_end(
 ) -> AppResult<()> {
     let preview = phase_preview(next, next_auto_started, settings);
     let (title, body) = match ended {
-        Phase::Work => ("专注完成".to_string(), format!("{}。{}", "本阶段已结束", preview)),
+        Phase::Work => (
+            "专注完成".to_string(),
+            format!("{}。{}", "本阶段已结束", preview),
+        ),
         Phase::ShortBreak => ("短休息结束".to_string(), preview),
         Phase::LongBreak => ("长休息结束".to_string(), preview),
     };
@@ -62,10 +70,16 @@ pub fn notify_goal_progress_if_needed(
     if daily_goal > 0 {
         let half = daily_goal.div_ceil(2);
         if daily_before < half && daily_after >= half {
-            notifier.notify("今日目标进度", &format!("已完成今日目标 50%（{daily_after}/{daily_goal}）"))?;
+            notifier.notify(
+                "今日目标进度",
+                &format!("已完成今日目标 50%（{daily_after}/{daily_goal}）"),
+            )?;
         }
         if daily_before < daily_goal && daily_after >= daily_goal {
-            notifier.notify("今日目标达成", &format!("恭喜！已完成今日目标（{daily_after}/{daily_goal}）"))?;
+            notifier.notify(
+                "今日目标达成",
+                &format!("恭喜！已完成今日目标（{daily_after}/{daily_goal}）"),
+            )?;
         }
     }
 
@@ -73,10 +87,16 @@ pub fn notify_goal_progress_if_needed(
     if weekly_goal > 0 {
         let half = weekly_goal.div_ceil(2);
         if weekly_before < half && weekly_after >= half {
-            notifier.notify("本周目标进度", &format!("已完成本周目标 50%（{weekly_after}/{weekly_goal}）"))?;
+            notifier.notify(
+                "本周目标进度",
+                &format!("已完成本周目标 50%（{weekly_after}/{weekly_goal}）"),
+            )?;
         }
         if weekly_before < weekly_goal && weekly_after >= weekly_goal {
-            notifier.notify("本周目标达成", &format!("恭喜！已完成本周目标（{weekly_after}/{weekly_goal}）"))?;
+            notifier.notify(
+                "本周目标达成",
+                &format!("恭喜！已完成本周目标（{weekly_after}/{weekly_goal}）"),
+            )?;
         }
     }
 
@@ -85,7 +105,11 @@ pub fn notify_goal_progress_if_needed(
 
 /// 生成“下一阶段预告”文案（区分是否已自动开始）。
 fn phase_preview(next: Phase, next_auto_started: bool, settings: &Settings) -> String {
-    let prefix = if next_auto_started { "已自动开始" } else { "即将开始" };
+    let prefix = if next_auto_started {
+        "已自动开始"
+    } else {
+        "即将开始"
+    };
     match next {
         Phase::Work => format!("{prefix}工作 {} 分钟", settings.pomodoro),
         Phase::ShortBreak => format!("{prefix}短休息 {} 分钟", settings.short_break),
@@ -163,30 +187,9 @@ mod tests {
             ..Settings::default()
         };
 
-        notify_phase_end(
-            &notifier,
-            Phase::Work,
-            Phase::ShortBreak,
-            false,
-            &settings,
-        )
-        .unwrap();
-        notify_phase_end(
-            &notifier,
-            Phase::ShortBreak,
-            Phase::Work,
-            true,
-            &settings,
-        )
-        .unwrap();
-        notify_phase_end(
-            &notifier,
-            Phase::LongBreak,
-            Phase::Work,
-            false,
-            &settings,
-        )
-        .unwrap();
+        notify_phase_end(&notifier, Phase::Work, Phase::ShortBreak, false, &settings).unwrap();
+        notify_phase_end(&notifier, Phase::ShortBreak, Phase::Work, true, &settings).unwrap();
+        notify_phase_end(&notifier, Phase::LongBreak, Phase::Work, false, &settings).unwrap();
 
         let calls = notifier.take();
         assert_eq!(calls.len(), 3);

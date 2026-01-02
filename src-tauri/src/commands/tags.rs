@@ -6,7 +6,10 @@ use super::state_like::CommandState;
 use super::types::AppSnapshot;
 
 /// 设置当前标签的内部实现（便于统一错误处理）。
-pub(crate) fn set_current_tag_impl<S: CommandState>(state: &S, tag: String) -> AppResult<AppSnapshot> {
+pub(crate) fn set_current_tag_impl<S: CommandState>(
+    state: &S,
+    tag: String,
+) -> AppResult<AppSnapshot> {
     let clock = crate::timer::SystemClock;
     let tag = tag.trim().to_string();
     if tag.is_empty() {

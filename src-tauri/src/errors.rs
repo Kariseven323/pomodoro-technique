@@ -62,10 +62,8 @@ mod tests {
     /// `AppError::Store`：Display 应包含“Store 失败”前缀。
     #[test]
     fn app_error_display_store() {
-        let err = tauri_plugin_store::Error::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "boom",
-        ));
+        let err =
+            tauri_plugin_store::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "boom"));
         let app_err = AppError::from(err);
         assert!(app_err.to_string().contains("Store 失败："));
         assert!(app_err.to_string().contains("boom"));

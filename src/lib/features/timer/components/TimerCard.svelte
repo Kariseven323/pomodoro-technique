@@ -1,10 +1,14 @@
 <script lang="ts">
   import { phaseAccentClass, phaseLabel } from "$lib/utils/phase";
   import { formatMmSs } from "$lib/utils/time";
+  import AudioControl from "$lib/features/audio/AudioControl.svelte";
+  import ComboDisplay from "$lib/features/timer/components/ComboDisplay.svelte";
   import type { TimerSnapshot } from "$lib/shared/types";
 
   const props = $props<{
     snapshot: TimerSnapshot;
+    combo: number;
+    todayInterruptions: number;
     requiresAdmin: boolean;
     onToggleStartPause: () => void;
     onReset: () => void;
@@ -26,6 +30,10 @@
     <div class="text-right">
       <div class="text-sm text-zinc-600 dark:text-zinc-300">今日完成</div>
       <div class="mt-1 text-xl font-semibold">{props.snapshot.todayStats.total}</div>
+      <div class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">今日中断：{props.todayInterruptions}</div>
+      <div class="mt-2 flex justify-end">
+        <ComboDisplay combo={props.combo} enabled={props.snapshot.settings.animation.comboEnabled} />
+      </div>
     </div>
   </div>
 
@@ -63,4 +71,6 @@
       <button class="ml-2 underline" onclick={props.onRestartAsAdmin}>以管理员身份重启</button>
     </div>
   {/if}
+
+  <AudioControl settings={props.snapshot.settings} />
 </div>

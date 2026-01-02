@@ -29,6 +29,9 @@ function makeSettings(alwaysOnTop: boolean): Settings {
     dailyGoal: 0,
     weeklyGoal: 0,
     alwaysOnTop,
+    audio: { enabled: true, currentAudioId: "builtin-white-noise", volume: 60, autoPlay: true },
+    animation: { enabled: true, comboEnabled: true, intensity: "standard" },
+    interruption: { enabled: true, confirmOnInterrupt: true },
   };
 }
 

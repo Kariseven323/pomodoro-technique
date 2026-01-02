@@ -2,10 +2,12 @@
 
 pub mod analysis;
 pub mod app;
+pub mod audio;
 pub mod blacklist;
 pub mod debug;
 pub mod export;
 pub mod history;
+pub mod interruption;
 pub mod logging;
 pub mod processes;
 pub mod settings;
@@ -13,4 +15,3 @@ pub mod tags;
 pub mod templates;
 pub mod timer;
 pub mod window;
-

@@ -16,7 +16,9 @@ pub fn get_focus_analysis(
 }
 
 /// IPC 内部实现：复用 `commands::analysis` 的可测试实现。
-fn get_focus_analysis_ipc_impl(state: &AppState, range: &DateRange) -> AppResult<crate::analysis::FocusAnalysis> {
+fn get_focus_analysis_ipc_impl(
+    state: &AppState,
+    range: &DateRange,
+) -> AppResult<crate::analysis::FocusAnalysis> {
     get_focus_analysis_impl(state, range)
 }
-

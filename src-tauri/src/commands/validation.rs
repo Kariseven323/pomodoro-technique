@@ -120,7 +120,10 @@ mod tests {
     #[test]
     fn validate_ymd_accepts_and_rejects() {
         assert!(validate_ymd("2025-01-01").is_ok());
-        assert!(matches!(validate_ymd("2025/01/01"), Err(AppError::Validation(_))));
+        assert!(matches!(
+            validate_ymd("2025/01/01"),
+            Err(AppError::Validation(_))
+        ));
     }
 
     /// `validate_date_range`：应校验格式并确保 from <= to。

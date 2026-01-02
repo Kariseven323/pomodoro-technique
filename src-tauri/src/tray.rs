@@ -66,6 +66,7 @@ pub fn setup_tray(app: &mut tauri::App) -> AppResult<()> {
                     }
                 }
                 MENU_QUIT_ID => {
+                    let _ = state.record_quit_interruption_before_exit();
                     app_handle.exit(0);
                 }
                 _ => {}

@@ -123,10 +123,7 @@ impl TimerRuntime {
             phase: Phase::Work,
             remaining_seconds: settings.pomodoro as u64 * 60,
             is_running: false,
-            current_tag: tags
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "工作".to_string()),
+            current_tag: tags.first().cloned().unwrap_or_else(|| "工作".to_string()),
             work_started_date: None,
             work_started_time: None,
             work_lock_active: false,
@@ -168,6 +165,20 @@ impl TimerRuntime {
     /// 专注期内黑名单锁定判断。
     pub fn blacklist_locked(&self) -> bool {
         self.phase == Phase::Work && self.work_lock_active
+    }
+
+    /// 判断工作阶段是否已开始（用于 PRD v4：中断记录/Combo 判定）。
+    pub fn is_work_started(&self) -> bool {
+        self.phase == Phase::Work && self.work_lock_active
+    }
+
+    /// 计算本次工作阶段已专注秒数（用于 PRD v4：中断记录）。
+    pub fn focused_seconds(&self, settings: &Settings) -> u64 {
+        if !self.is_work_started() {
+            return 0;
+        }
+        let total = settings.pomodoro as u64 * 60;
+        total.saturating_sub(self.remaining_seconds.min(total))
     }
 
     /// 更新当前标签。
@@ -277,13 +288,23 @@ impl TimerRuntime {
             )?;
         }
 
-        let next = next_phase(ended_phase, data.settings.long_break_interval, completed_today_after);
+        let next = next_phase(
+            ended_phase,
+            data.settings.long_break_interval,
+            completed_today_after,
+        );
         self.apply_phase(next, &data.settings);
         self.is_running = false;
 
         let next_auto_started = self.start_next_phase_if_needed(next, &data.settings, clock);
 
-        notification::notify_phase_end(notifier, ended_phase, next, next_auto_started, &data.settings)?;
+        notification::notify_phase_end(
+            notifier,
+            ended_phase,
+            next,
+            next_auto_started,
+            &data.settings,
+        )?;
 
         tracing::info!(
             target: "timer",
@@ -302,7 +323,11 @@ impl TimerRuntime {
     }
 
     /// 将当前工作阶段写入 `history`（仅在自然完成时调用）。
-    fn append_work_record(&mut self, data: &mut AppData, clock: &dyn TimerClock) -> AppResult<WorkCompletedEvent> {
+    fn append_work_record(
+        &mut self,
+        data: &mut AppData,
+        clock: &dyn TimerClock,
+    ) -> AppResult<WorkCompletedEvent> {
         let date = self
             .work_started_date
             .clone()
@@ -364,7 +389,12 @@ impl TimerRuntime {
     }
 
     /// 按规则决定是否自动开始“下一阶段”的倒计时，并返回是否已自动开始。
-    fn start_next_phase_if_needed(&mut self, next: Phase, settings: &Settings, clock: &dyn TimerClock) -> bool {
+    fn start_next_phase_if_needed(
+        &mut self,
+        next: Phase,
+        settings: &Settings,
+        clock: &dyn TimerClock,
+    ) -> bool {
         match next {
             Phase::ShortBreak | Phase::LongBreak => {
                 // 工作结束后始终自动进入休息倒计时。
@@ -403,7 +433,10 @@ impl TimerRuntime {
     /// 测试辅助：读取工作阶段启动的日期/时间（仅用于覆盖迁移防御逻辑）。
     #[cfg(test)]
     pub(crate) fn debug_work_started_at(&self) -> (Option<String>, Option<String>) {
-        (self.work_started_date.clone(), self.work_started_time.clone())
+        (
+            self.work_started_date.clone(),
+            self.work_started_time.clone(),
+        )
     }
 }
 
@@ -436,7 +469,8 @@ fn phase_seconds(phase: Phase, settings: &Settings) -> u64 {
 fn next_phase(current: Phase, long_break_interval: u32, completed_today_after: u32) -> Phase {
     match current {
         Phase::Work => {
-            if long_break_interval > 0 && completed_today_after.is_multiple_of(long_break_interval) {
+            if long_break_interval > 0 && completed_today_after.is_multiple_of(long_break_interval)
+            {
                 Phase::LongBreak
             } else {
                 Phase::ShortBreak
@@ -534,7 +568,8 @@ mod tests {
     /// `tick` 在归零时会写入历史并切换到休息阶段。
     #[test]
     fn tick_completes_work_and_switches_to_break() {
-        let clock = FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
+        let clock =
+            FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
         let notifier = NoopNotifier;
 
         let mut data = AppData::default();
@@ -554,7 +589,10 @@ mod tests {
         assert!(out.work_completed_event.is_some());
         assert_eq!(runtime.phase, Phase::ShortBreak);
         assert!(runtime.is_running);
-        assert_eq!(runtime.remaining_seconds, (data.settings.short_break as u64) * 60);
+        assert_eq!(
+            runtime.remaining_seconds,
+            (data.settings.short_break as u64) * 60
+        );
         assert_eq!(data.history.len(), 1);
         assert_eq!(data.history[0].records.len(), 1);
     }
@@ -564,7 +602,8 @@ mod tests {
     fn tick_phase_end_hits_tracing_info_when_enabled() {
         init_tracing_once();
 
-        let clock = FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
+        let clock =
+            FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
         let notifier = NoopNotifier;
 
         let mut data = AppData::default();
@@ -634,7 +673,8 @@ mod tests {
     /// 当今日完成数达到长休息间隔倍数时，应进入长休息阶段。
     #[test]
     fn tick_uses_long_break_interval() {
-        let clock = FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
+        let clock =
+            FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
         let notifier = NoopNotifier;
 
         let mut data = AppData::default();
@@ -664,13 +704,17 @@ mod tests {
         let _ = runtime.tick(&mut data, &clock, &notifier).unwrap();
         assert_eq!(runtime.phase, Phase::LongBreak);
         assert!(runtime.is_running);
-        assert_eq!(runtime.remaining_seconds, (data.settings.long_break as u64) * 60);
+        assert_eq!(
+            runtime.remaining_seconds,
+            (data.settings.long_break as u64) * 60
+        );
     }
 
     /// 休息结束后：未开启连续番茄时不应自动开始工作倒计时。
     #[test]
     fn break_end_does_not_auto_start_work_when_disabled() {
-        let clock = FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
+        let clock =
+            FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
         let notifier = NoopNotifier;
 
         let mut data = AppData::default();
@@ -692,7 +736,8 @@ mod tests {
     /// 休息结束后：开启连续番茄且仍有剩余时应自动开始工作倒计时。
     #[test]
     fn break_end_auto_starts_work_when_enabled_and_remaining() {
-        let clock = FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
+        let clock =
+            FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
         let notifier = NoopNotifier;
 
         let mut data = AppData::default();
@@ -816,7 +861,8 @@ mod tests {
     /// `snapshot_with_clock`：快照应包含目标进度与今日/本周统计，并保留运行态字段。
     #[test]
     fn snapshot_with_clock_includes_stats_and_goal_progress() {
-        let clock = FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
+        let clock =
+            FixedClock::new("2025-01-01", "09:00").with_week_range("2025-01-01", "2025-01-07");
         let mut data = AppData::default();
         data.settings.daily_goal = 3;
         data.settings.weekly_goal = 10;

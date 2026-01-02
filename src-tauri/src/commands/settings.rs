@@ -8,7 +8,10 @@ use super::state_like::CommandState;
 use super::types::AppSnapshot;
 
 /// 更新设置的内部实现（便于统一错误处理与托盘复用）。
-pub(crate) fn update_settings_impl<S: CommandState>(state: &S, settings: Settings) -> AppResult<AppSnapshot> {
+pub(crate) fn update_settings_impl<S: CommandState>(
+    state: &S,
+    settings: Settings,
+) -> AppResult<AppSnapshot> {
     timer::validate_settings(&settings)?;
 
     tracing::info!(
@@ -55,7 +58,11 @@ pub(crate) fn update_settings_impl<S: CommandState>(state: &S, settings: Setting
 }
 
 /// 设置目标的内部实现（便于统一错误处理）。
-pub(crate) fn set_goals_impl<S: CommandState>(state: &S, daily: u32, weekly: u32) -> AppResult<Settings> {
+pub(crate) fn set_goals_impl<S: CommandState>(
+    state: &S,
+    daily: u32,
+    weekly: u32,
+) -> AppResult<Settings> {
     let mut next = state.data_snapshot().settings;
     next.daily_goal = daily;
     next.weekly_goal = weekly;

@@ -8,11 +8,9 @@ use super::state_like::CommandState;
 
 /// 开始计时的可测试实现：不依赖托盘；内部会广播快照事件。
 pub(crate) fn timer_start_impl<S: CommandState>(state: &S) -> AppResult<TimerSnapshot> {
-    timer_start_transition_with_deps(
-        state,
-        &crate::timer::SystemClock,
-        |names| crate::processes::kill_names_best_effort(names),
-    )?;
+    timer_start_transition_with_deps(state, &crate::timer::SystemClock, |names| {
+        crate::processes::kill_names_best_effort(names)
+    })?;
     Ok(state.timer_snapshot())
 }
 
@@ -104,7 +102,10 @@ pub(crate) fn timer_skip_impl<S: CommandState>(state: &S) -> AppResult<TimerSnap
 }
 
 /// 跳过阶段的可测试实现：可注入 `clock`，避免依赖真实日期。
-fn timer_skip_transition_with_clock<S: CommandState>(state: &S, clock: &dyn TimerClock) -> AppResult<()> {
+fn timer_skip_transition_with_clock<S: CommandState>(
+    state: &S,
+    clock: &dyn TimerClock,
+) -> AppResult<()> {
     state.update_data_and_timer(
         |data, timer_runtime| {
             let today = clock.today_date();
@@ -213,7 +214,8 @@ mod tests {
         assert_eq!(kills[0].items[0].name, "a.exe");
 
         // 再次开始：不应重复 kill。
-        timer_start_transition_with_deps(&state, &clock, |_names| unreachable!("不应再触发 kill")).unwrap();
+        timer_start_transition_with_deps(&state, &clock, |_names| unreachable!("不应再触发 kill"))
+            .unwrap();
         assert_eq!(state.take_kill_results().len(), 0);
         assert_eq!(state.emitted_timer_snapshot_count(), 2);
     }

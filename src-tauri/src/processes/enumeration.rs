@@ -63,26 +63,26 @@ fn normalize_sysinfo_exe_path(path: &std::path::Path) -> Option<String> {
 }
 
 /// 将“进程快照”条目列表转为前端展示用 `ProcessInfo`（去重、排序、图标 best-effort）。
-fn list_processes_from_entries(entries: impl IntoIterator<Item = ProcessEntry>) -> Vec<ProcessInfo> {
+fn list_processes_from_entries(
+    entries: impl IntoIterator<Item = ProcessEntry>,
+) -> Vec<ProcessInfo> {
     let mut by_name: BTreeMap<String, ProcessInfo> = BTreeMap::new();
 
     for entry in entries {
-        let exe_path = entry.exe_path.and_then(|p| {
-            if p.trim().is_empty() {
-                None
-            } else {
-                Some(p)
-            }
-        });
+        let exe_path = entry
+            .exe_path
+            .and_then(|p| if p.trim().is_empty() { None } else { Some(p) });
 
-        by_name.entry(entry.name.clone()).or_insert_with(|| ProcessInfo {
-            name: entry.name,
-            pid: entry.pid,
-            exe_path: exe_path.clone(),
-            icon_data_url: exe_path
-                .as_deref()
-                .and_then(|p| icon_data_url_best_effort(p).ok().flatten()),
-        });
+        by_name
+            .entry(entry.name.clone())
+            .or_insert_with(|| ProcessInfo {
+                name: entry.name,
+                pid: entry.pid,
+                exe_path: exe_path.clone(),
+                icon_data_url: exe_path
+                    .as_deref()
+                    .and_then(|p| icon_data_url_best_effort(p).ok().flatten()),
+            });
     }
 
     by_name.into_values().collect()
@@ -249,12 +249,16 @@ fn extract_exe_icon_png(exe_path: &std::path::Path, size: i32) -> AppResult<Vec<
             SHGFI_ICON | SHGFI_SMALLICON,
         );
         if ok == 0 {
-            return Err(AppError::Invariant("提取图标失败（SHGetFileInfoW 返回 0）".to_string()));
+            return Err(AppError::Invariant(
+                "提取图标失败（SHGetFileInfoW 返回 0）".to_string(),
+            ));
         }
 
         let hicon = shfi.hIcon;
         if hicon.0.is_null() {
-            return Err(AppError::Invariant("提取图标失败（HICON 为空）".to_string()));
+            return Err(AppError::Invariant(
+                "提取图标失败（HICON 为空）".to_string(),
+            ));
         }
         let icon = IconGuard(hicon);
 
@@ -293,7 +297,9 @@ fn extract_exe_icon_png(exe_path: &std::path::Path, size: i32) -> AppResult<Vec<
         .map_err(|e| AppError::Invariant(format!("CreateDIBSection 失败（{e:?}）")))?;
 
         if hbmp.0.is_null() || bits.is_null() {
-            return Err(AppError::Invariant("CreateDIBSection 失败（句柄/像素指针为空）".to_string()));
+            return Err(AppError::Invariant(
+                "CreateDIBSection 失败（句柄/像素指针为空）".to_string(),
+            ));
         }
         let hbmp = BitmapGuard(hbmp);
 

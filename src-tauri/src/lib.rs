@@ -3,15 +3,19 @@
 mod analysis;
 mod app_data;
 mod app_paths;
+mod audio;
+mod combo;
 mod commands;
 mod errors;
+mod events;
+mod interruptions;
+#[cfg(not(test))]
+mod ipc;
 mod logging;
 mod processes;
 #[cfg(not(test))]
 mod state;
 mod timer;
-#[cfg(not(test))]
-mod ipc;
 #[cfg(not(test))]
 mod tray;
 pub mod typegen;
@@ -55,7 +59,7 @@ pub fn run() {
 
             let data = load_or_init_app_data(&store)?;
 
-            app.manage(AppState::new(app.handle().clone(), store, data));
+            app.manage(AppState::new(app.handle().clone(), store, data)?);
 
             setup_tray(app)?;
             setup_window_close_to_tray(app)?;
@@ -82,6 +86,12 @@ pub fn run() {
             ipc::history::get_history,
             ipc::history::set_history_remark,
             ipc::analysis::get_focus_analysis,
+            ipc::audio::audio_list,
+            ipc::audio::audio_play,
+            ipc::audio::audio_pause,
+            ipc::audio::audio_set_volume,
+            ipc::audio::audio_import,
+            ipc::audio::audio_delete,
             ipc::templates::get_templates,
             ipc::templates::save_template,
             ipc::templates::delete_template,
@@ -99,6 +109,10 @@ pub fn run() {
             ipc::timer::timer_pause,
             ipc::timer::timer_reset,
             ipc::timer::timer_skip,
+            ipc::interruption::record_interruption,
+            ipc::interruption::get_interruption_stats,
+            ipc::interruption::get_combo,
+            ipc::interruption::get_total_pomodoros,
             ipc::processes::restart_as_admin
         ])
         .run(tauri::generate_context!())
@@ -182,10 +196,17 @@ fn load_or_init_app_data(store: &tauri_plugin_store::Store<tauri::Wry>) -> AppRe
     if let Some(value) = store.get(STORE_KEY) {
         let mut data: AppData = serde_json::from_value(value)?;
         tracing::info!(target: "storage", "已从 store 加载 AppData");
+        let mut changed = false;
         if data.migrate_v2() {
+            changed = true;
+        }
+        if data.migrate_v4() {
+            changed = true;
+        }
+        if changed {
             store.set(STORE_KEY, serde_json::to_value(&data)?);
             store.save()?;
-            tracing::info!(target: "storage", "已完成 AppData v2 迁移并写回 store");
+            tracing::info!(target: "storage", "已完成 AppData 迁移并写回 store");
         }
         return Ok(data);
     }

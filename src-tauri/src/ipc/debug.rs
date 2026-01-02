@@ -26,4 +26,3 @@ fn debug_generate_history_ipc_impl(state: &AppState, days: u32) -> AppResult<u32
 fn debug_clear_history_ipc_impl(state: &AppState) -> AppResult<bool> {
     debug_clear_history_impl(state)
 }
-

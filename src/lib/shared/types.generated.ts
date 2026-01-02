@@ -42,6 +42,61 @@ export type Settings = {
    * 窗口是否置顶（主窗口）。
    */
   alwaysOnTop: boolean;
+  /**
+   * 音效设置（PRD v4）。
+   */
+  audio: AudioSettings;
+  /**
+   * 动画设置（PRD v4）。
+   */
+  animation: AnimationSettings;
+  /**
+   * 中断设置（PRD v4）。
+   */
+  interruption: InterruptionSettings;
+};
+export type AudioSettings = {
+  /**
+   * 是否启用音效。
+   */
+  enabled: boolean;
+  /**
+   * 当前选中的音效 id。
+   */
+  currentAudioId: string;
+  /**
+   * 音量（0-100）。
+   */
+  volume: number;
+  /**
+   * 是否随番茄自动播放。
+   */
+  autoPlay: boolean;
+};
+export type AnimationIntensity = "minimal" | "standard" | "fancy";
+export type AnimationSettings = {
+  /**
+   * 是否启用完成动画。
+   */
+  enabled: boolean;
+  /**
+   * 是否启用 Combo 显示。
+   */
+  comboEnabled: boolean;
+  /**
+   * 动画强度。
+   */
+  intensity: AnimationIntensity;
+};
+export type InterruptionSettings = {
+  /**
+   * 是否记录中断。
+   */
+  enabled: boolean;
+  /**
+   * 中断时是否弹窗确认。
+   */
+  confirmOnInterrupt: boolean;
 };
 export type BlacklistItem = {
   /**
@@ -107,6 +162,61 @@ export type HistoryDay = {
    */
   records: Array<HistoryRecord>;
 };
+export type CustomAudio = {
+  /**
+   * 音频 id（uuid）。
+   */
+  id: string;
+  /**
+   * 显示名称。
+   */
+  name: string;
+  /**
+   * 文件名（存储在 audio 目录）。
+   */
+  fileName: string;
+  /**
+   * 是否内置。
+   */
+  builtin: boolean;
+};
+export type InterruptionType = "reset" | "skip" | "quit";
+export type InterruptionRecord = {
+  /**
+   * 中断时间（ISO 8601）。
+   */
+  timestamp: string;
+  /**
+   * 中断时剩余秒数。
+   */
+  remainingSeconds: bigint;
+  /**
+   * 已专注秒数。
+   */
+  focusedSeconds: bigint;
+  /**
+   * 中断原因（用户填写，可为空）。
+   */
+  reason: string;
+  /**
+   * 中断类型。
+   */
+  type: InterruptionType;
+  /**
+   * 当时的任务标签。
+   */
+  tag: string;
+};
+export type InterruptionDay = {
+  /**
+   * 日期（YYYY-MM-DD）。
+   */
+  date: string;
+  /**
+   * 当日中断记录集合。
+   */
+  records: Array<InterruptionRecord>;
+};
 export type AppData = {
   /**
    * 用户设置。
@@ -140,6 +250,22 @@ export type AppData = {
    * 调试历史记录（仅开发环境使用，与正式数据隔离）。
    */
   historyDev: Array<HistoryDay>;
+  /**
+   * 自定义音频列表。
+   */
+  customAudios: Array<CustomAudio>;
+  /**
+   * 中断记录（按日分组）。
+   */
+  interruptions: Array<InterruptionDay>;
+  /**
+   * 当前 Combo 数（运行时状态，可选持久化）。
+   */
+  currentCombo: number;
+  /**
+   * 累计完成番茄总数（用于里程碑）。
+   */
+  totalPomodoros: bigint;
 };
 export type TagCount = {
   /**
@@ -357,6 +483,46 @@ export type FocusAnalysis = {
    */
   summary: string;
 };
+export type InterruptionReasonCount = {
+  /**
+   * 原因名称（空值会被规范化为 `未填写`）。
+   */
+  reason: string;
+  /**
+   * 次数。
+   */
+  count: number;
+};
+export type InterruptionStats = {
+  /**
+   * 中断总次数。
+   */
+  totalInterruptions: number;
+  /**
+   * 每日平均中断次数（按日期范围天数归一）。
+   */
+  dailyAverage: number;
+  /**
+   * 每周平均中断次数（按范围覆盖到的周数归一）。
+   */
+  weeklyAverage: number;
+  /**
+   * 24 小时分布（0-23 点）。
+   */
+  hourlyCounts: Array<number>;
+  /**
+   * 原因分布（按次数倒序）。
+   */
+  reasonDistribution: Array<InterruptionReasonCount>;
+  /**
+   * 中断率：中断番茄数 / 总开始番茄数（开始=完成+中断）。
+   */
+  interruptionRate: number;
+  /**
+   * 平均专注时长（秒；仅统计中断记录）。
+   */
+  averageFocusedSeconds: number;
+};
 export type ExportFormat = "csv" | "json";
 export type ExportField = "date" | "startTime" | "endTime" | "duration" | "tag" | "phase" | "remark";
 export type ExportRequest = {
@@ -372,4 +538,24 @@ export type ExportRequest = {
    * 导出字段（为空则导出默认字段集）。
    */
   fields: Array<ExportField>;
+};
+export type PomodoroCompletedPayload = {
+  /**
+   * 当前 Combo 数。
+   */
+  combo: number;
+  /**
+   * 累计完成番茄总数。
+   */
+  total: bigint;
+  /**
+   * 是否达成每日目标（本次完成触发“首次达到”）。
+   */
+  dailyGoalReached: boolean;
+};
+export type MilestoneReachedPayload = {
+  /**
+   * 里程碑数值（例如 100/500/1000）。
+   */
+  milestone: bigint;
 };

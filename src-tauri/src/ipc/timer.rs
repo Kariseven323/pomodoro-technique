@@ -1,7 +1,9 @@
 //! 计时器相关 IPC 命令：将前端调用转发到可测试的命令逻辑实现。
 
 use crate::commands::common::to_ipc_result;
-use crate::commands::timer::{timer_pause_impl, timer_reset_impl, timer_skip_impl, timer_start_impl};
+use crate::commands::timer::{
+    timer_pause_impl, timer_reset_impl, timer_skip_impl, timer_start_impl,
+};
 use crate::errors::AppResult;
 use crate::state::AppState;
 use crate::timer::TimerSnapshot;
@@ -10,7 +12,15 @@ use crate::timer::TimerSnapshot;
 #[tauri::command]
 pub fn timer_start(state: tauri::State<'_, AppState>) -> Result<TimerSnapshot, String> {
     to_ipc_result((|| -> AppResult<TimerSnapshot> {
+        let before = state.timer_snapshot();
         let snapshot = timer_start_ipc_impl(&*state)?;
+        if before.phase == crate::app_data::Phase::Work
+            && !before.blacklist_locked
+            && !before.is_running
+        {
+            let _ = state.on_work_started_for_combo();
+        }
+        let _ = state.sync_audio_with_timer();
         let _ = crate::tray::refresh_tray(&*state);
         Ok(snapshot)
     })())
@@ -21,6 +31,7 @@ pub fn timer_start(state: tauri::State<'_, AppState>) -> Result<TimerSnapshot, S
 pub fn timer_pause(state: tauri::State<'_, AppState>) -> Result<TimerSnapshot, String> {
     to_ipc_result((|| -> AppResult<TimerSnapshot> {
         let snapshot = timer_pause_ipc_impl(&*state)?;
+        let _ = state.sync_audio_with_timer();
         let _ = crate::tray::refresh_tray(&*state);
         Ok(snapshot)
     })())
@@ -30,7 +41,12 @@ pub fn timer_pause(state: tauri::State<'_, AppState>) -> Result<TimerSnapshot, S
 #[tauri::command]
 pub fn timer_reset(state: tauri::State<'_, AppState>) -> Result<TimerSnapshot, String> {
     to_ipc_result((|| -> AppResult<TimerSnapshot> {
+        let before = state.timer_snapshot();
         let snapshot = timer_reset_ipc_impl(&*state)?;
+        if before.phase == crate::app_data::Phase::Work && before.blacklist_locked {
+            let _ = state.on_interrupted_for_combo();
+        }
+        let _ = state.sync_audio_with_timer();
         let _ = crate::tray::refresh_tray(&*state);
         Ok(snapshot)
     })())
@@ -40,7 +56,12 @@ pub fn timer_reset(state: tauri::State<'_, AppState>) -> Result<TimerSnapshot, S
 #[tauri::command]
 pub fn timer_skip(state: tauri::State<'_, AppState>) -> Result<TimerSnapshot, String> {
     to_ipc_result((|| -> AppResult<TimerSnapshot> {
+        let before = state.timer_snapshot();
         let snapshot = timer_skip_ipc_impl(&*state)?;
+        if before.phase == crate::app_data::Phase::Work && before.blacklist_locked {
+            let _ = state.on_interrupted_for_combo();
+        }
+        let _ = state.sync_audio_with_timer();
         let _ = crate::tray::refresh_tray(&*state);
         Ok(snapshot)
     })())
