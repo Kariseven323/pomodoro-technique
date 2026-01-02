@@ -7,7 +7,6 @@
   import AutoContinueSection from "$lib/features/settings/components/AutoContinueSection.svelte";
   import GoalsSection from "$lib/features/settings/components/GoalsSection.svelte";
   import StorePathsSection from "$lib/features/settings/components/StorePathsSection.svelte";
-  import LogSection from "$lib/features/settings/components/LogSection.svelte";
 
   const props = $props<{ open: boolean; settings: Settings }>();
 
@@ -96,7 +95,6 @@
           />
 
           <StorePathsSection open={props.open} />
-          <LogSection open={props.open} />
 
           {#if dev}
             <div class="mt-4">
