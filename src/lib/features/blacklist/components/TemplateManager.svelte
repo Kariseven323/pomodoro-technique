@@ -25,10 +25,7 @@
 
   /** 将 `templates/activeTemplateIds` 同步到本地草稿（用于模板切换与管理）。 */
   function syncFromProps(): void {
-    templatesDraft = props.templates.map((t: BlacklistTemplate) => ({
-      ...t,
-      processes: t.processes.map((p: BlacklistItem) => ({ ...p })),
-    }));
+    templatesDraft = props.templates.map((t: BlacklistTemplate) => ({ ...t }));
     activeTemplateIdsDraft = [...props.activeTemplateIds];
     quickTemplateId = templatesDraft[0]?.id ?? "";
   }
@@ -38,10 +35,7 @@
     templateError = null;
     try {
       const tpls = await getTemplates();
-      templatesDraft = tpls.map((t: BlacklistTemplate) => ({
-        ...t,
-        processes: t.processes.map((p: BlacklistItem) => ({ ...p })),
-      }));
+      templatesDraft = tpls.map((t: BlacklistTemplate) => ({ ...t }));
       quickTemplateId = templatesDraft[0]?.id ?? "";
       dispatch("templatesChange", {
         templates: templatesDraft,
@@ -143,11 +137,16 @@
     templateNotice = null;
   }
 
-  /** 响应 `open` 变化：打开时同步草稿并刷新模板，关闭时清理提示状态。 */
+  /** 响应 `open` 变化：打开时同步草稿，关闭时清理提示状态。 */
   function onOpenEffect(): void {
     if (props.open) {
-      syncFromProps();
-      void loadTemplates();
+      // 延迟执行同步与刷新，避免在弹窗首次渲染阶段做大量对象拷贝造成卡顿。
+      window.setTimeout(() => {
+        if (!props.open) return;
+        syncFromProps();
+        // 模板数据已从 `AppSnapshot` 传入，打开时不主动请求后端刷新，避免额外 IPC/渲染造成卡顿；
+        // 用户需要时可点击“刷新模板”手动触发。
+      }, 0);
     } else {
       templateError = null;
       templateNotice = null;

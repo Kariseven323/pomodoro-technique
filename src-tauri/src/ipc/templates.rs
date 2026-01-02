@@ -11,7 +11,20 @@ use crate::state::AppState;
 /// 获取模板列表与当前激活模板状态。
 #[tauri::command]
 pub fn get_templates(state: tauri::State<'_, AppState>) -> Result<Vec<BlacklistTemplate>, String> {
-    to_ipc_result(get_templates_ipc_impl(&*state))
+    to_ipc_result((|| -> AppResult<Vec<BlacklistTemplate>> {
+        let started = std::time::Instant::now();
+        tracing::warn!(target: "blacklist", "get_templates 开始");
+        let out = get_templates_ipc_impl(&*state)?;
+        let total_processes: usize = out.iter().map(|t| t.processes.len()).sum();
+        tracing::warn!(
+            target: "blacklist",
+            "get_templates 完成：count={} total_processes={} cost_ms={}",
+            out.len(),
+            total_processes,
+            started.elapsed().as_millis()
+        );
+        Ok(out)
+    })())
 }
 
 /// 保存模板：新增或更新（自定义模板）。

@@ -78,15 +78,16 @@ fn set_mini_mode_impl(app: &tauri::AppHandle, state: &AppState, enabled: bool) -
         });
     } else {
         let snapshot = state.window_mode_snapshot();
-        window.set_resizable(false)?;
         if let Some((w, h)) = snapshot.prev_size {
             window.set_size(LogicalSize::new(w as f64, h as f64))?;
         } else {
-            window.set_size(LogicalSize::new(420.0, 720.0))?;
+            // 与 `tauri.conf.json` 的默认窗口尺寸保持一致，避免“恢复后窗口过大”。
+            window.set_size(LogicalSize::new(380.0, 600.0))?;
         }
         if let Some((x, y)) = snapshot.prev_position {
             window.set_position(LogicalPosition::new(x as f64, y as f64))?;
         }
+        window.set_resizable(true)?;
         let _ = state.update_window_mode(|m| {
             m.mini_mode = false;
             Ok(())

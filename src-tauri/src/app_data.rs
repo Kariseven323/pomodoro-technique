@@ -83,9 +83,9 @@ pub struct AudioSettings {
     pub auto_play: bool,
 }
 
-/// 默认内置音效 id（白噪音）。
+/// 默认音效 id（v4 不提供预设音效，因此为空字符串）。
 fn default_audio_id() -> String {
-    "builtin-white-noise".to_string()
+    "".to_string()
 }
 
 /// 默认音量（0-100）。
@@ -94,7 +94,7 @@ fn default_audio_volume() -> u8 {
 }
 
 impl Default for AudioSettings {
-    /// PRD v4 默认音效设置：默认启用、白噪音、音量 60、随番茄自动播放。
+    /// PRD v4 默认音效设置：默认启用、无预设音效、音量 60、随番茄自动播放。
     fn default() -> Self {
         Self {
             enabled: true,
@@ -436,7 +436,13 @@ impl AppData {
     pub fn migrate_v4(&mut self) -> bool {
         let mut changed = false;
 
-        if self.settings.audio.current_audio_id.trim().is_empty() {
+        if self
+            .settings
+            .audio
+            .current_audio_id
+            .trim()
+            .starts_with("builtin-")
+        {
             self.settings.audio.current_audio_id = default_audio_id();
             changed = true;
         }
@@ -594,7 +600,7 @@ mod tests {
         assert_eq!(s.weekly_goal, 40);
         assert_eq!(s.always_on_top, false);
         assert!(s.audio.enabled);
-        assert_eq!(s.audio.current_audio_id, "builtin-white-noise");
+        assert_eq!(s.audio.current_audio_id, "");
         assert_eq!(s.audio.volume, 60);
         assert!(s.audio.auto_play);
         assert!(s.animation.enabled);

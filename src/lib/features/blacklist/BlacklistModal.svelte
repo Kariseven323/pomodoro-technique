@@ -20,17 +20,14 @@
     templatesChange: { templates: BlacklistTemplate[]; activeTemplateIds: string[]; blacklist: BlacklistItem[] };
   }>();
 
-  let loading = $state(false);
+  let initialLoading = $state(false);
+  let refreshing = $state(false);
   let error = $state<string | null>(null);
   let processes = $state<ProcessInfo[]>([]);
   let lastUpdatedAt = $state<number | null>(null);
   let draft = $state<BlacklistItem[]>([]);
   let originalNames = $state<string[]>([]);
-  let autoRefreshTimerId: number | null = null;
-  let autoRefreshCleanup: (() => void) | null = null;
-
-  /** 正在运行进程列表自动刷新间隔（毫秒）。 */
-  const AUTO_REFRESH_INTERVAL_MS = 2000;
+  let lastOpen = false;
 
   /** 规范化进程名用于比较（忽略大小写与首尾空白）。 */
   function normalizeName(name: string): string {
@@ -54,10 +51,15 @@
     dispatch("close");
   }
 
-  /** 从后端加载进程列表（避免并发请求导致 UI 抖动）。 */
+  /** 从后端加载进程列表（避免并发请求导致 UI 抖动，同时避免刷新时“整块列表闪烁/不可操作”）。 */
   async function loadProcesses(): Promise<void> {
-    if (loading) return;
-    loading = true;
+    if (initialLoading || refreshing) return;
+    const isInitial = processes.length === 0;
+    if (isInitial) {
+      initialLoading = true;
+    } else {
+      refreshing = true;
+    }
     error = null;
     try {
       processes = await listProcesses();
@@ -65,49 +67,14 @@
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
-      loading = false;
+      initialLoading = false;
+      refreshing = false;
     }
   }
 
   /** 立即刷新进程列表（用于按钮点击/聚焦回到窗口时）。 */
   function refreshProcessesNow(): void {
     void loadProcesses();
-  }
-
-  /** 停止自动刷新并清理事件监听。 */
-  function stopAutoRefresh(): void {
-    if (autoRefreshTimerId !== null) {
-      window.clearInterval(autoRefreshTimerId);
-      autoRefreshTimerId = null;
-    }
-    if (autoRefreshCleanup) {
-      autoRefreshCleanup();
-      autoRefreshCleanup = null;
-    }
-  }
-
-  /** 启动自动刷新：打开弹窗时持续同步“正在运行的进程”，避免页面停留导致列表过期。 */
-  function startAutoRefresh(): void {
-    stopAutoRefresh();
-    autoRefreshTimerId = window.setInterval(refreshProcessesNow, AUTO_REFRESH_INTERVAL_MS);
-
-    /** 窗口重新获得焦点时立即刷新，减少用户“切回应用后仍是旧列表”的感知延迟。 */
-    const onFocus = (): void => {
-      refreshProcessesNow();
-    };
-    /** 页面从后台切回前台时刷新（例如最小化/切换窗口回来）。 */
-    const onVisibilityChange = (): void => {
-      if (!document.hidden) refreshProcessesNow();
-    };
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    /** 清理本次启动的事件监听（由 `stopAutoRefresh` 调用）。 */
-    autoRefreshCleanup = (): void => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
   }
 
   /** 判断草稿黑名单是否包含指定进程名。 */
@@ -180,19 +147,21 @@
     dispatch("save", out);
   }
 
-  /** 响应 `open` 变化：打开时加载并同步，关闭时清理状态。 */
-  function onOpenEffect(): void {
-    if (props.open) {
+  /** 响应 `open` 的“边沿变化”：仅在打开/关闭瞬间做初始化与清理，避免重复触发导致“实时刷新”错觉。 */
+  function onOpenEdgeEffect(): void {
+    const isOpen = props.open;
+    if (isOpen === lastOpen) return;
+    lastOpen = isOpen;
+    if (isOpen) {
       syncDraftFromProps();
-      refreshProcessesNow();
-      startAutoRefresh();
-    } else {
-      stopAutoRefresh();
-      error = null;
+      // 延迟到下一轮事件循环再触发拉取，确保弹窗优先渲染出来，避免“点击后无界面”的卡顿感知。
+      window.setTimeout(refreshProcessesNow, 0);
+      return;
     }
+    error = null;
   }
 
-  $effect(onOpenEffect);
+  $effect(onOpenEdgeEffect);
 
   /** 判断某条目是否为打开弹窗时“已有条目”（用于锁定时禁用移除）。 */
   function isOriginalName(name: string): boolean {
@@ -219,7 +188,7 @@
     ></button>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div
-        class="w-full max-w-3xl rounded-3xl border border-white/20 bg-white/80 p-5 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/70"
+        class="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-3xl border border-white/20 bg-white/80 p-5 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/70"
       >
         <div class="mb-4 flex items-center justify-between gap-3">
           <div>
@@ -242,32 +211,35 @@
           </div>
         </div>
 
-        <TemplateManager
-          open={props.open}
-          locked={props.locked}
-          templates={props.templates}
-          activeTemplateIds={props.activeTemplateIds}
-          {draft}
-          on:templatesChange={onTemplatesChange}
-        />
-
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <BlacklistDraftList
-            {draft}
+        <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+          <TemplateManager
+            open={props.open}
             locked={props.locked}
-            {isOriginalName}
-            onDisplayNameChange={setDisplayName}
-            onRemove={removeFromDraft}
+            templates={props.templates}
+            activeTemplateIds={props.activeTemplateIds}
+            {draft}
+            on:templatesChange={onTemplatesChange}
           />
-          <RunningProcessesPanel
-            {processes}
-            {loading}
-            {error}
-            {lastUpdatedAt}
-            {hasInDraft}
-            onToggle={toggleProcess}
-            onRefresh={refreshProcessesNow}
-          />
+
+          <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <BlacklistDraftList
+              {draft}
+              locked={props.locked}
+              {isOriginalName}
+              onDisplayNameChange={setDisplayName}
+              onRemove={removeFromDraft}
+            />
+            <RunningProcessesPanel
+              {processes}
+              {initialLoading}
+              {refreshing}
+              {error}
+              {lastUpdatedAt}
+              {hasInDraft}
+              onToggle={toggleProcess}
+              onRefresh={refreshProcessesNow}
+            />
+          </div>
         </div>
 
         <div class="mt-5 flex items-center justify-end gap-2">

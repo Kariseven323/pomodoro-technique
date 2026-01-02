@@ -1,11 +1,12 @@
 <script lang="ts">
   import type { StorePaths } from "$lib/shared/types";
-  import { getStorePaths, openStoreDir as openStoreDirApi } from "$lib/api/tauri";
+  import { frontendLog, getStorePaths, openStoreDir as openStoreDirApi } from "$lib/api/tauri";
 
   const props = $props<{ open: boolean }>();
 
   let storePaths = $state<StorePaths | null>(null);
   let storePathsLoading = $state(false);
+  let storePathsOpening = $state(false);
   let storePathsError = $state<string | null>(null);
   let storePathsNotice = $state<string | null>(null);
 
@@ -26,15 +27,24 @@
 
   /** 点击“打开文件夹”时打开应用数据根目录（统一入口）。 */
   async function onOpenStoreDirClick(): Promise<void> {
-    storePathsError = null;
-    storePathsNotice = null;
-    if (!storePaths) await loadStorePaths();
     try {
+      if (storePathsOpening) return;
+      storePathsOpening = true;
+      storePathsError = null;
+      storePathsNotice = `正在请求打开文件夹...（${new Date().toLocaleTimeString()}）`;
+
+      void frontendLog("info", `[open_store_dir] click storeDir=${storePaths?.storeDirPath ?? ""}`).catch(() => {});
       await openStoreDirApi();
+      void frontendLog("info", "[open_store_dir] requested").catch(() => {});
+
       storePathsNotice = "已请求打开文件夹";
       window.setTimeout(clearStorePathsNotice, 2000);
     } catch (e) {
       storePathsError = e instanceof Error ? e.message : String(e);
+      storePathsNotice = null;
+      void frontendLog("error", `[open_store_dir] failed: ${storePathsError}`).catch(() => {});
+    } finally {
+      storePathsOpening = false;
     }
   }
 
@@ -74,7 +84,7 @@
     <button
       type="button"
       class="shrink-0 rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs text-zinc-700 hover:bg-white disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
-      disabled={storePathsLoading}
+      disabled={storePathsOpening}
       onclick={onOpenStoreDirClick}
     >
       打开文件夹

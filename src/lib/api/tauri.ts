@@ -139,6 +139,11 @@ export async function listProcesses(): Promise<ProcessInfo[]> {
   return invoke<ProcessInfo[]>("list_processes");
 }
 
+/** 获取某个 exe 的图标 data URL（用于黑名单管理按需加载图标）。 */
+export async function processIcon(exePath: string): Promise<string | null> {
+  return invoke<string | null>("process_icon", { exePath });
+}
+
 /** 开始计时（工作阶段首次开始会自动终止黑名单进程）。 */
 export async function timerStart(): Promise<TimerSnapshot> {
   return invoke<TimerSnapshot>("timer_start");

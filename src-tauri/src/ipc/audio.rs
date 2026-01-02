@@ -5,7 +5,7 @@ use crate::commands::common::to_ipc_result;
 use crate::errors::{AppError, AppResult};
 use crate::state::AppState;
 
-/// 获取音频列表（内置 + 自定义）。
+/// 获取音频列表（仅自定义：v4 不提供预设音效）。
 #[tauri::command]
 pub fn audio_list(state: tauri::State<'_, AppState>) -> Result<Vec<CustomAudio>, String> {
     to_ipc_result(audio_list_impl(&state))
@@ -39,19 +39,17 @@ pub fn audio_import(
     to_ipc_result(audio_import_impl(&state, file_path, name))
 }
 
-/// 删除自定义音频（预设不可删除）。
+/// 删除自定义音频。
 #[tauri::command]
 pub fn audio_delete(state: tauri::State<'_, AppState>, audio_id: String) -> Result<bool, String> {
     to_ipc_result(audio_delete_impl(&state, audio_id))
 }
 
-/// `audio_list` 的内部实现：确保内置资源已生成后再返回。
+/// `audio_list` 的内部实现：确保音频目录存在后再返回。
 fn audio_list_impl(state: &AppState) -> AppResult<Vec<CustomAudio>> {
     crate::audio::ensure_builtin_audio_files_in_dir(state.audio_dir())?;
     let data = state.data_snapshot();
-    let mut list = crate::audio::builtin_audios();
-    list.extend(data.custom_audios.clone());
-    Ok(list)
+    Ok(data.custom_audios.clone())
 }
 
 /// `audio_play` 的内部实现：更新当前音效 id（持久化）并开始播放。
@@ -61,6 +59,7 @@ fn audio_play_impl(state: &AppState, audio_id: String) -> AppResult<bool> {
     if audio_id.is_empty() {
         return Err(AppError::Validation("音效 id 不能为空".to_string()));
     }
+    tracing::info!(target: "audio", "请求播放音效：id={}", audio_id);
 
     let audio = state.update_data_with(|data| {
         let Some(found) = crate::audio::find_audio_by_id(data, &audio_id) else {
@@ -71,6 +70,7 @@ fn audio_play_impl(state: &AppState, audio_id: String) -> AppResult<bool> {
     })?;
 
     let played = state.audio_controller().play(audio)?;
+    tracing::info!(target: "audio", "播放命令已下发：played={}", played);
     let _ = state.emit_timer_snapshot();
     state.sync_audio_with_timer()?;
     Ok(played)
@@ -108,6 +108,12 @@ fn audio_import_impl(state: &AppState, file_path: String, name: String) -> AppRe
     if name.is_empty() {
         return Err(AppError::Validation("音效名称不能为空".to_string()));
     }
+    tracing::info!(
+        target: "audio",
+        "导入音效：src={} name={}",
+        src.to_string_lossy(),
+        name
+    );
 
     let ext = src
         .extension()
@@ -124,6 +130,7 @@ fn audio_import_impl(state: &AppState, file_path: String, name: String) -> AppRe
     let id = uuid::Uuid::new_v4().to_string();
     let file_name = format!("{id}.{ext}");
     let dst = state.audio_dir().join(&file_name);
+    tracing::info!(target: "audio", "导入落盘：dst={}", dst.to_string_lossy());
 
     std::fs::copy(&src, &dst).map_err(|e| AppError::Invariant(format!("复制音频文件失败：{e}")))?;
 
@@ -152,14 +159,7 @@ fn audio_delete_impl(state: &AppState, audio_id: String) -> AppResult<bool> {
         return Err(AppError::Validation("音效 id 不能为空".to_string()));
     }
     let audio_id_for_cmp = audio_id.clone();
-
-    // 禁止删除内置音效。
-    if crate::audio::builtin_audios()
-        .iter()
-        .any(|a| a.id == audio_id)
-    {
-        return Err(AppError::Validation("内置音效不可删除".to_string()));
-    }
+    tracing::info!(target: "audio", "删除音效：id={}", audio_id);
 
     let (file_name, should_fallback, custom_audios) = state.update_data_with(|data| {
         let Some(i) = data
@@ -172,7 +172,7 @@ fn audio_delete_impl(state: &AppState, audio_id: String) -> AppResult<bool> {
         let removed = data.custom_audios.remove(i);
         let should_fallback = data.settings.audio.current_audio_id == audio_id_for_cmp;
         if should_fallback {
-            data.settings.audio.current_audio_id = "builtin-white-noise".to_string();
+            data.settings.audio.current_audio_id = "".to_string();
         }
         Ok((
             removed.file_name,
@@ -182,6 +182,11 @@ fn audio_delete_impl(state: &AppState, audio_id: String) -> AppResult<bool> {
     })?;
 
     let path = state.audio_dir().join(&file_name);
+    tracing::info!(
+        target: "audio",
+        "删除音频文件：path={}",
+        path.to_string_lossy()
+    );
     let _ = std::fs::remove_file(&path);
 
     let _ = state.audio_controller().update_custom_audios(custom_audios);

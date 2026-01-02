@@ -22,12 +22,12 @@
 </script>
 
 <div
-  class="rounded-3xl border border-white/20 bg-white/70 p-5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60"
+  class="rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl md:p-5 dark:border-white/10 dark:bg-zinc-900/60"
 >
   <div class="mb-3 text-sm font-medium text-zinc-900 dark:text-zinc-50">目标进度</div>
   <GoalProgress progress={props.snapshot.goalProgress} />
 
-  <div class="mt-6">
+  <div class="mt-4 md:mt-6">
     <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">任务标签</div>
     <TagPicker
       tags={props.tags}
@@ -38,7 +38,7 @@
     />
   </div>
 
-  <div class="mt-6">
+  <div class="mt-4 md:mt-6">
     <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">今日统计（按标签）</div>
     {#if props.snapshot.todayStats.byTag.length === 0}
       <div class="text-sm text-zinc-500 dark:text-zinc-400">今天还没有完成记录</div>
@@ -54,7 +54,7 @@
     {/if}
   </div>
 
-  <div class="mt-6 text-xs text-zinc-600 dark:text-zinc-300">
+  <div class="mt-4 text-xs text-zinc-600 md:mt-6 dark:text-zinc-300">
     黑名单状态：{props.snapshot.blacklistLocked ? "专注期锁定（仅可新增）" : "可编辑"}
   </div>
 </div>

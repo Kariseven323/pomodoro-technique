@@ -49,7 +49,12 @@
   async function toggleAutoPlay(): Promise<void> {
     const next = { ...props.settings.audio, autoPlay: !props.settings.audio.autoPlay };
     await saveAudioSettings(next);
-    if (next.autoPlay && $timerSnapshot?.phase === "work" && $timerSnapshot?.isRunning) {
+    if (
+      next.autoPlay &&
+      next.currentAudioId.trim().length > 0 &&
+      $timerSnapshot?.phase === "work" &&
+      $timerSnapshot?.isRunning
+    ) {
       await audioPlay(next.currentAudioId);
       playing = true;
     }
@@ -61,7 +66,12 @@
     const next = { ...props.settings.audio, currentAudioId: id };
     await saveAudioSettings(next);
     if (playing) {
-      await audioPlay(id);
+      if (id.trim().length === 0) {
+        await audioPause();
+        playing = false;
+      } else {
+        await audioPlay(id);
+      }
     }
   }
 
@@ -72,6 +82,7 @@
       playing = false;
       return;
     }
+    if (props.settings.audio.currentAudioId.trim().length === 0) return;
     const ok = await audioPlay(props.settings.audio.currentAudioId);
     playing = ok;
   }
@@ -97,7 +108,7 @@
       <button
         class="rounded-xl border border-black/10 bg-white/70 px-3 py-1 text-xs text-zinc-700 hover:bg-white disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
         onclick={() => void togglePlayPause()}
-        disabled={!props.settings.audio.enabled}
+        disabled={!props.settings.audio.enabled || props.settings.audio.currentAudioId.trim().length === 0}
       >
         {playing ? "暂停" : "播放"}
       </button>
@@ -121,13 +132,15 @@
     <label class="block">
       <div class="mb-1 text-xs text-zinc-600 dark:text-zinc-300">音效选择</div>
       <select
-        class="w-full rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-900 outline-none disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
+        class="w-full rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-900 outline-none disabled:opacity-50 dark:border-white/10 dark:bg-zinc-100/90 dark:text-zinc-900"
         value={props.settings.audio.currentAudioId}
         disabled={!props.settings.audio.enabled || loading}
         onchange={(ev) => void onSelectAudio(ev)}
       >
         {#if loading}
           <option value={props.settings.audio.currentAudioId}>加载中...</option>
+        {:else if audios.length === 0}
+          <option value="">未导入音效</option>
         {:else}
           {#each audios as a (a.id)}
             <option value={a.id}>{a.name}{a.builtin ? "（内置）" : ""}</option>

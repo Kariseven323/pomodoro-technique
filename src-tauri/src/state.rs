@@ -42,6 +42,15 @@ impl AppState {
         let clock = crate::timer::SystemClock;
         let timer = TimerRuntime::new(&data.settings, &data.tags, &clock);
         let audio_dir = crate::app_paths::app_audio_dir(&app)?;
+        if let Ok(removed) = crate::audio::cleanup_legacy_builtin_audio_files(&audio_dir) {
+            if removed > 0 {
+                tracing::info!(
+                    target: "audio",
+                    "已清理旧预设占位音频文件：count={}",
+                    removed
+                );
+            }
+        }
         let audio = crate::audio::AudioController::new(audio_dir)?;
         audio.update_custom_audios(data.custom_audios.clone())?;
         Ok(Self {

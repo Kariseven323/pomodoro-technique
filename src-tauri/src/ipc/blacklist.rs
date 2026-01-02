@@ -13,8 +13,23 @@ pub fn set_blacklist(
     blacklist: Vec<BlacklistItem>,
 ) -> Result<Vec<BlacklistItem>, String> {
     to_ipc_result((|| -> AppResult<Vec<BlacklistItem>> {
+        let started = std::time::Instant::now();
+        tracing::warn!(
+            target: "blacklist",
+            "set_blacklist 开始：incoming_count={} locked={}",
+            blacklist.len(),
+            state.timer_snapshot().blacklist_locked
+        );
+
         let out = set_blacklist_ipc_impl(&*state, blacklist)?;
         let _ = crate::tray::refresh_tray(&*state);
+
+        tracing::warn!(
+            target: "blacklist",
+            "set_blacklist 完成：out_count={} cost_ms={}",
+            out.len(),
+            started.elapsed().as_millis()
+        );
         Ok(out)
     })())
 }

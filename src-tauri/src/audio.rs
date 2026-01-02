@@ -1,12 +1,11 @@
 //! 音频播放与音频文件管理（PRD v4：白噪音/专注音乐）。
 
-use std::fs::File;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 
-use rand::{Rng as _, SeedableRng as _};
+#[cfg(windows)]
+use std::fs::File;
 #[cfg(windows)]
 use std::io::BufReader;
 
@@ -16,170 +15,51 @@ use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source as _};
 use crate::app_data::{AppData, AudioSettings, CustomAudio, Phase};
 use crate::errors::{AppError, AppResult};
 
-/// 内置音效列表（注意：内置音效不可删除）。
+/// 预设音效列表（v4 不提供预设音效，因此为空）。
 pub fn builtin_audios() -> Vec<CustomAudio> {
-    vec![
-        CustomAudio {
-            id: "builtin-rain".to_string(),
-            name: "雨声".to_string(),
-            file_name: "rain.wav".to_string(),
-            builtin: true,
-        },
-        CustomAudio {
-            id: "builtin-cafe".to_string(),
-            name: "咖啡馆".to_string(),
-            file_name: "cafe.wav".to_string(),
-            builtin: true,
-        },
-        CustomAudio {
-            id: "builtin-forest".to_string(),
-            name: "森林".to_string(),
-            file_name: "forest.wav".to_string(),
-            builtin: true,
-        },
-        CustomAudio {
-            id: "builtin-ocean".to_string(),
-            name: "海浪".to_string(),
-            file_name: "ocean.wav".to_string(),
-            builtin: true,
-        },
-        CustomAudio {
-            id: "builtin-white-noise".to_string(),
-            name: "白噪音".to_string(),
-            file_name: "white-noise.wav".to_string(),
-            builtin: true,
-        },
-    ]
+    vec![]
 }
 
-/// 获取音频目录下某个文件名的完整路径。
+/// Windows：获取音频目录下某个文件名的完整路径。
+#[cfg(windows)]
 pub fn audio_file_path_in_dir(audio_dir: &Path, file_name: &str) -> PathBuf {
     audio_dir.join(file_name)
 }
 
-/// 确保音频目录存在，并在缺失时生成内置 WAV 文件。
-pub fn ensure_builtin_audio_files(app: &tauri::AppHandle) -> AppResult<()> {
-    let dir = crate::app_paths::app_audio_dir(app)?;
-    ensure_builtin_audio_files_in_dir(&dir)
-}
-
-/// 确保音频目录存在，并在缺失时生成内置 WAV 文件（使用已解析好的目录路径）。
+/// 确保音频目录存在（使用已解析好的目录路径；v4 不再生成预设音频文件）。
 pub fn ensure_builtin_audio_files_in_dir(audio_dir: &Path) -> AppResult<()> {
     std::fs::create_dir_all(audio_dir)
         .map_err(|e| AppError::Invariant(format!("创建音频目录失败：{e}")))?;
-
-    for item in builtin_audios() {
-        let path = audio_dir.join(&item.file_name);
-        if path.exists() {
-            continue;
-        }
-        generate_builtin_wav(&path, &item.id)?;
-    }
     Ok(())
 }
 
-/// 根据内置音效 id 生成一段 WAV（用于避免仓库内提交二进制资源文件）。
-fn generate_builtin_wav(path: &Path, audio_id: &str) -> AppResult<()> {
-    let sample_rate = 22_050u32;
-    let seconds = 4u32;
-    let len = (sample_rate * seconds) as usize;
-
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0xCAFE_F00D_u64);
-    let mut samples: Vec<i16> = Vec::with_capacity(len);
-
-    match audio_id {
-        "builtin-white-noise" => {
-            for _ in 0..len {
-                let v: i16 = rng.gen_range(i16::MIN / 4..=i16::MAX / 4);
-                samples.push(v);
+/// 清理旧版本生成的“预设占位符音效文件”（仅 best-effort，不会影响启动）。
+pub fn cleanup_legacy_builtin_audio_files(audio_dir: &Path) -> AppResult<u32> {
+    let candidates = [
+        "rain.wav",
+        "cafe.wav",
+        "forest.wav",
+        "ocean.wav",
+        "white-noise.wav",
+    ];
+    let mut removed = 0u32;
+    for name in candidates {
+        let path = audio_dir.join(name);
+        match std::fs::remove_file(&path) {
+            Ok(()) => removed = removed.saturating_add(1),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(AppError::Invariant(format!(
+                    "清理旧预设音效文件失败：{}（{e}）",
+                    path.to_string_lossy()
+                )));
             }
-        }
-        "builtin-rain" => {
-            let mut y = 0.0f32;
-            for _ in 0..len {
-                let x = rng.gen_range(-1.0f32..=1.0f32);
-                // 简易低通：模拟“雨声”偏柔和的质感。
-                y = y * 0.98 + x * 0.02;
-                samples.push((y * 12_000.0).clamp(-32_000.0, 32_000.0) as i16);
-            }
-        }
-        "builtin-ocean" => {
-            let mut phase = 0.0f32;
-            let step = 2.0 * std::f32::consts::PI * 0.35 / sample_rate as f32;
-            let mut y = 0.0f32;
-            for _ in 0..len {
-                phase += step;
-                let swell = phase.sin() * 0.5 + 0.5;
-                let x = rng.gen_range(-1.0f32..=1.0f32) * swell;
-                y = y * 0.995 + x * 0.005;
-                samples.push((y * 14_000.0).clamp(-32_000.0, 32_000.0) as i16);
-            }
-        }
-        "builtin-forest" => {
-            let mut t = 0.0f32;
-            for _ in 0..len {
-                t += 1.0 / sample_rate as f32;
-                let chirp =
-                    (2.0 * std::f32::consts::PI * (400.0 + 80.0 * (t * 0.7).sin()) * t).sin();
-                let noise = rng.gen_range(-1.0f32..=1.0f32) * 0.15;
-                let v = chirp * 0.15 + noise;
-                samples.push((v * 18_000.0).clamp(-32_000.0, 32_000.0) as i16);
-            }
-        }
-        "builtin-cafe" => {
-            let mut y = 0.0f32;
-            for _ in 0..len {
-                let x = rng.gen_range(-1.0f32..=1.0f32);
-                // 简易棕噪：更低频的环境底噪。
-                y = (y + x * 0.02).clamp(-1.0, 1.0);
-                samples.push((y * 10_000.0).clamp(-32_000.0, 32_000.0) as i16);
-            }
-        }
-        _ => {
-            return Err(AppError::Validation(format!("未知内置音效 id：{audio_id}")));
         }
     }
-
-    write_wav_mono_16(path, sample_rate, &samples)
+    Ok(removed)
 }
 
-/// 写入 16-bit PCM 单声道 WAV 文件。
-fn write_wav_mono_16(path: &Path, sample_rate: u32, samples: &[i16]) -> AppResult<()> {
-    let mut file =
-        File::create(path).map_err(|e| AppError::Invariant(format!("创建 WAV 文件失败：{e}")))?;
-
-    let num_channels = 1u16;
-    let bits_per_sample = 16u16;
-    let byte_rate = sample_rate * u32::from(num_channels) * u32::from(bits_per_sample / 8);
-    let block_align = num_channels * (bits_per_sample / 8);
-
-    let data_bytes = samples.len() as u32 * 2;
-    let riff_size = 36u32 + data_bytes;
-
-    file.write_all(b"RIFF")
-        .and_then(|_| file.write_all(&riff_size.to_le_bytes()))
-        .and_then(|_| file.write_all(b"WAVE"))
-        .and_then(|_| file.write_all(b"fmt "))
-        .and_then(|_| file.write_all(&16u32.to_le_bytes())) // PCM fmt chunk size
-        .and_then(|_| file.write_all(&1u16.to_le_bytes())) // audio format = PCM
-        .and_then(|_| file.write_all(&num_channels.to_le_bytes()))
-        .and_then(|_| file.write_all(&sample_rate.to_le_bytes()))
-        .and_then(|_| file.write_all(&byte_rate.to_le_bytes()))
-        .and_then(|_| file.write_all(&block_align.to_le_bytes()))
-        .and_then(|_| file.write_all(&bits_per_sample.to_le_bytes()))
-        .and_then(|_| file.write_all(b"data"))
-        .and_then(|_| file.write_all(&data_bytes.to_le_bytes()))
-        .map_err(|e| AppError::Invariant(format!("写入 WAV 头失败：{e}")))?;
-
-    for s in samples {
-        file.write_all(&s.to_le_bytes())
-            .map_err(|e| AppError::Invariant(format!("写入 WAV 数据失败：{e}")))?;
-    }
-
-    Ok(())
-}
-
-/// 通过 id 在（内置 + 自定义）列表中定位音频条目。
+/// 通过 id 在音频列表中定位音频条目（v4 仅自定义音频）。
 pub fn find_audio_by_id(data: &AppData, audio_id: &str) -> Option<CustomAudio> {
     let builtin = builtin_audios().into_iter().find(|a| a.id == audio_id);
     if builtin.is_some() {
@@ -316,11 +196,6 @@ impl AudioEngine {
         Ok(true)
     }
 
-    /// 获取当前加载的音频 id（用于上层判断是否需要切换/暂停）。
-    pub fn current_audio_id(&self) -> Option<&str> {
-        self.current_audio_id.as_deref()
-    }
-
     /// 根据当前计时器状态同步音效：自动播放/暂停 + 结束前淡出。
     pub fn sync_with_timer(
         &mut self,
@@ -454,11 +329,6 @@ impl AudioEngine {
     pub fn play(&mut self, _audio_dir: &Path, audio: &CustomAudio) -> AppResult<bool> {
         self.current_audio_id = Some(audio.id.clone());
         Ok(false)
-    }
-
-    /// 获取当前加载的音频 id。
-    pub fn current_audio_id(&self) -> Option<&str> {
-        self.current_audio_id.as_deref()
     }
 
     /// 同步计时器状态（非 Windows：不实际播放，始终返回成功）。

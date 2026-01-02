@@ -18,7 +18,7 @@
 </script>
 
 <div
-  class="rounded-3xl border border-white/20 bg-white/70 p-5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/60"
+  class="rounded-3xl border border-white/20 bg-white/70 p-4 shadow-xl backdrop-blur-xl md:p-5 dark:border-white/10 dark:bg-zinc-900/60"
 >
   <div class="flex items-start justify-between">
     <div>
@@ -37,14 +37,14 @@
     </div>
   </div>
 
-  <div class="mt-6 rounded-3xl bg-black/5 p-5 text-center dark:bg-white/10">
-    <div class="text-5xl font-bold tabular-nums">{formatMmSs(props.snapshot.remainingSeconds)}</div>
+  <div class="mt-4 rounded-3xl bg-black/5 p-4 text-center md:mt-6 md:p-5 dark:bg-white/10">
+    <div class="text-4xl font-bold tabular-nums md:text-5xl">{formatMmSs(props.snapshot.remainingSeconds)}</div>
     <div class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
       {props.snapshot.isRunning ? "计时中..." : "已暂停"}
     </div>
   </div>
 
-  <div class="mt-5 grid grid-cols-3 gap-2">
+  <div class="mt-4 grid grid-cols-3 gap-2 md:mt-5">
     <button
       class="rounded-2xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white shadow hover:bg-zinc-800 disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
       onclick={props.onToggleStartPause}

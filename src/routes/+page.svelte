@@ -42,6 +42,22 @@
   const tags = useTags({ showToast });
   const blacklist = useBlacklist({ showToast });
 
+  let mainPanel = $state<"timer" | "stats">("timer");
+
+  /** 切换主界面面板（小窗口下使用“页签”避免内容过高导致必须最大化）。 */
+  function setMainPanel(next: "timer" | "stats"): void {
+    mainPanel = next;
+  }
+
+  /** 点击“计时”页签。 */
+  function onTimerTabClick(): void {
+    setMainPanel("timer");
+  }
+
+  /** 点击“统计”页签。 */
+  function onStatsTabClick(): void {
+    setMainPanel("stats");
+  }
   /** 在快照尚未加载时，为设置弹窗提供一个可用的默认值。 */
   const fallbackSettings: Settings = {
     pomodoro: 25,
@@ -53,7 +69,7 @@
     dailyGoal: 8,
     weeklyGoal: 40,
     alwaysOnTop: false,
-    audio: { enabled: true, currentAudioId: "builtin-white-noise", volume: 60, autoPlay: true },
+    audio: { enabled: true, currentAudioId: "", volume: 60, autoPlay: true },
     animation: { enabled: true, comboEnabled: true, intensity: "standard" },
     interruption: { enabled: true, confirmOnInterrupt: true },
   };
@@ -319,7 +335,7 @@
 </script>
 
 <main
-  class="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 px-4 py-6 text-zinc-900 dark:from-zinc-950 dark:to-zinc-900 dark:text-zinc-50"
+  class="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100 px-3 py-4 text-zinc-900 dark:from-zinc-950 dark:to-zinc-900 dark:text-zinc-50"
 >
   <div class="mx-auto w-full max-w-4xl">
     <header class="mb-5 flex items-center justify-between gap-3">
@@ -362,24 +378,72 @@
         正在加载...
       </div>
     {:else if $appData && $timerSnapshot}
-      <section class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <TimerCard
-          snapshot={$timerSnapshot}
-          combo={$appData.currentCombo ?? 0}
-          todayInterruptions={todayInterruptionCount()}
-          requiresAdmin={$killSummary?.requiresAdmin ?? false}
-          onToggleStartPause={handleToggleStartPause}
-          onReset={handleResetTimer}
-          onSkip={handleSkipTimer}
-          onRestartAsAdmin={handleRestartAsAdmin}
-        />
+      <section>
+        <div
+          class="mb-3 flex rounded-2xl border border-black/10 bg-white/70 p-1 shadow-sm md:hidden dark:border-white/10 dark:bg-white/5"
+        >
+          <button
+            class={"flex-1 rounded-xl px-3 py-2 text-sm " +
+              (mainPanel === "timer"
+                ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                : "text-zinc-700 hover:bg-black/5 dark:text-zinc-200 dark:hover:bg-white/10")}
+            type="button"
+            onclick={onTimerTabClick}
+          >
+            计时
+          </button>
+          <button
+            class={"flex-1 rounded-xl px-3 py-2 text-sm " +
+              (mainPanel === "stats"
+                ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                : "text-zinc-700 hover:bg-black/5 dark:text-zinc-200 dark:hover:bg-white/10")}
+            type="button"
+            onclick={onStatsTabClick}
+          >
+            统计
+          </button>
+        </div>
 
-        <StatsCard
-          snapshot={$timerSnapshot}
-          tags={$appData.tags}
-          onSelectTag={handleTagSelect}
-          onCreateTag={handleTagCreate}
-        />
+        <div class="md:hidden">
+          {#if mainPanel === "timer"}
+            <TimerCard
+              snapshot={$timerSnapshot}
+              combo={$appData.currentCombo ?? 0}
+              todayInterruptions={todayInterruptionCount()}
+              requiresAdmin={$killSummary?.requiresAdmin ?? false}
+              onToggleStartPause={handleToggleStartPause}
+              onReset={handleResetTimer}
+              onSkip={handleSkipTimer}
+              onRestartAsAdmin={handleRestartAsAdmin}
+            />
+          {:else}
+            <StatsCard
+              snapshot={$timerSnapshot}
+              tags={$appData.tags}
+              onSelectTag={handleTagSelect}
+              onCreateTag={handleTagCreate}
+            />
+          {/if}
+        </div>
+
+        <div class="hidden gap-4 md:grid md:grid-cols-2">
+          <TimerCard
+            snapshot={$timerSnapshot}
+            combo={$appData.currentCombo ?? 0}
+            todayInterruptions={todayInterruptionCount()}
+            requiresAdmin={$killSummary?.requiresAdmin ?? false}
+            onToggleStartPause={handleToggleStartPause}
+            onReset={handleResetTimer}
+            onSkip={handleSkipTimer}
+            onRestartAsAdmin={handleRestartAsAdmin}
+          />
+          <StatsCard
+            snapshot={$timerSnapshot}
+            tags={$appData.tags}
+            onSelectTag={handleTagSelect}
+            onCreateTag={handleTagCreate}
+          />
+        </div>
       </section>
     {/if}
   </div>

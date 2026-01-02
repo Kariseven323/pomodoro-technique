@@ -36,21 +36,46 @@ struct ProcessEntry {
     exe_path: Option<String>,
 }
 
+/// exe 图标缓存：按 exe 路径缓存 `data:image/png;base64,...`（或 `None`），减少重复提取导致的卡顿。
+#[cfg(windows)]
+static ICON_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
+> = std::sync::OnceLock::new();
+
+/// 获取全局图标缓存（线程安全）。
+#[cfg(windows)]
+fn icon_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, Option<String>>> {
+    ICON_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
 /// 获取当前运行进程列表（按进程名去重并按名称排序）。
 pub fn list_processes() -> AppResult<Vec<ProcessInfo>> {
+    let started = std::time::Instant::now();
+    tracing::warn!(target: "processes", "sysinfo 进程枚举开始");
+
     let mut system = System::new_all();
     system.refresh_all();
 
-    let entries = system.processes().iter().map(|(pid, process)| {
+    let total = system.processes().len();
+    let mut entries: Vec<ProcessEntry> = Vec::with_capacity(total);
+    for (pid, process) in system.processes().iter() {
         let exe_path = process.exe().and_then(normalize_sysinfo_exe_path);
-        ProcessEntry {
+        entries.push(ProcessEntry {
             name: process.name().to_string(),
             pid: pid.as_u32(),
             exe_path,
-        }
-    });
+        });
+    }
 
-    Ok(list_processes_from_entries(entries))
+    let out = list_processes_from_entries(entries);
+    tracing::warn!(
+        target: "processes",
+        "sysinfo 进程枚举完成：raw_count={} unique_count={} cost_ms={}",
+        total,
+        out.len(),
+        started.elapsed().as_millis()
+    );
+    Ok(out)
 }
 
 /// 将 sysinfo 返回的 exe 路径规范化为可序列化字符串（空路径视为 None）。
@@ -62,7 +87,7 @@ fn normalize_sysinfo_exe_path(path: &std::path::Path) -> Option<String> {
     }
 }
 
-/// 将“进程快照”条目列表转为前端展示用 `ProcessInfo`（去重、排序、图标 best-effort）。
+/// 将“进程快照”条目列表转为前端展示用 `ProcessInfo`（去重、排序，并尽量保留可用的 exe 路径）。
 fn list_processes_from_entries(
     entries: impl IntoIterator<Item = ProcessEntry>,
 ) -> Vec<ProcessInfo> {
@@ -73,16 +98,30 @@ fn list_processes_from_entries(
             .exe_path
             .and_then(|p| if p.trim().is_empty() { None } else { Some(p) });
 
-        by_name
-            .entry(entry.name.clone())
-            .or_insert_with(|| ProcessInfo {
-                name: entry.name,
-                pid: entry.pid,
-                exe_path: exe_path.clone(),
-                icon_data_url: exe_path
-                    .as_deref()
-                    .and_then(|p| icon_data_url_best_effort(p).ok().flatten()),
-            });
+        let name_key = entry.name.clone();
+        match by_name.get_mut(&name_key) {
+            Some(existing) => {
+                // sysinfo 的迭代顺序不稳定；同名进程里可能先遇到“拿不到 exe_path”的条目。
+                // 为提升 UI 图标可用率：若已有条目缺少 exe_path，而当前条目有 exe_path，则用当前条目补全。
+                if existing.exe_path.is_none() && exe_path.is_some() {
+                    existing.exe_path = exe_path.clone();
+                    existing.pid = entry.pid;
+                }
+            }
+            None => {
+                by_name.insert(
+                    name_key,
+                    ProcessInfo {
+                        name: entry.name,
+                        pid: entry.pid,
+                        exe_path: exe_path.clone(),
+                        // 为避免“管理黑名单”首屏卡顿，进程列表默认不下发图标数据；
+                        // 前端可按需调用 `process_icon` 获取单个 exe 的图标。
+                        icon_data_url: None,
+                    },
+                );
+            }
+        }
     }
 
     by_name.into_values().collect()
@@ -94,11 +133,45 @@ fn icon_data_url_best_effort(exe_path: &str) -> AppResult<Option<String>> {
     {
         use base64::Engine as _;
         use std::path::Path;
-        let png = extract_exe_icon_png(Path::new(exe_path), 32)?;
-        Ok(Some(format!(
-            "data:image/png;base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(png)
-        )))
+        let key = exe_path.to_string();
+
+        if let Ok(cache) = icon_cache().lock() {
+            if let Some(cached) = cache.get(&key) {
+                return Ok(cached.clone());
+            }
+        }
+
+        let started = std::time::Instant::now();
+        let out = match extract_exe_icon_png(Path::new(exe_path), 32) {
+            Ok(png) => Some(format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(png)
+            )),
+            Err(e) => {
+                tracing::warn!(
+                    target: "processes",
+                    "提取进程图标失败（将忽略）：exe_path={} err={}",
+                    exe_path,
+                    e
+                );
+                None
+            }
+        };
+        let cost_ms = started.elapsed().as_millis();
+        if cost_ms >= 200 {
+            tracing::warn!(
+                target: "processes",
+                "提取进程图标耗时较长：exe_path={} cost_ms={}",
+                exe_path,
+                cost_ms
+            );
+        }
+
+        if let Ok(mut cache) = icon_cache().lock() {
+            cache.insert(key, out.clone());
+        }
+
+        Ok(out)
     }
 
     #[cfg(not(windows))]
@@ -106,6 +179,11 @@ fn icon_data_url_best_effort(exe_path: &str) -> AppResult<Option<String>> {
         let _ = exe_path;
         Ok(None)
     }
+}
+
+/// 获取 exe 的图标 data URL（Windows：带缓存；其他平台始终返回 `Ok(None)`）。
+pub fn icon_data_url_for_exe(exe_path: &str) -> AppResult<Option<String>> {
+    icon_data_url_best_effort(exe_path)
 }
 
 #[cfg(test)]

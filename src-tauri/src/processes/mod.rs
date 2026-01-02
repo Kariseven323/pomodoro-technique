@@ -3,6 +3,9 @@
 mod enumeration;
 pub(crate) mod termination;
 
+/// 获取 exe 图标 data URL（用于前端按需加载图标）。
+pub use enumeration::icon_data_url_for_exe;
+/// 列举当前运行进程（用于黑名单管理 UI）。
 pub use enumeration::{list_processes, ProcessInfo};
 pub use termination::{kill_names_best_effort, KillSummary};
 

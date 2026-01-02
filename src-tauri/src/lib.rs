@@ -105,6 +105,7 @@ pub fn run() {
             ipc::debug::debug_clear_history,
             ipc::window::exit_app,
             ipc::processes::list_processes,
+            ipc::processes::process_icon,
             ipc::timer::timer_start,
             ipc::timer::timer_pause,
             ipc::timer::timer_reset,

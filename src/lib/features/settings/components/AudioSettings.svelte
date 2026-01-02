@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { audioDelete, audioImport, audioList } from "$lib/api/tauri";
+  import { audioDelete, audioImport, audioList, frontendLog } from "$lib/api/tauri";
   import type { CustomAudio } from "$lib/shared/types";
 
   let {
@@ -19,7 +19,9 @@
   let audios = $state<CustomAudio[]>([]);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  let notice = $state<string | null>(null);
   let importName = $state<string>("");
+  let importing = $state(false);
 
   /** 拉取音效列表（内置 + 自定义）。 */
   async function loadAudios(): Promise<void> {
@@ -37,26 +39,55 @@
 
   /** 选择本地音频文件并导入。 */
   async function pickAndImport(): Promise<void> {
+    if (importing) return;
+    importing = true;
     error = null;
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: "音频文件", extensions: ["mp3", "wav", "ogg", "flac"] }],
-    });
-    if (!selected || Array.isArray(selected)) return;
-    const name = importName.trim() || "自定义音效";
-    await audioImport(selected, name);
-    importName = "";
-    await loadAudios();
+    notice = null;
+    try {
+      await frontendLog("info", `[audio_import] click enabled=${enabled}`);
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "音频文件", extensions: ["mp3", "wav", "ogg", "flac"] }],
+      });
+      await frontendLog("info", `[audio_import] dialog result=${JSON.stringify(selected)}`);
+      if (!selected || Array.isArray(selected)) {
+        notice = "已取消选择";
+        return;
+      }
+      const name = importName.trim() || "自定义音效";
+      await frontendLog("info", `[audio_import] importing file=${selected} name=${name}`);
+      const created = await audioImport(selected, name);
+      await frontendLog("info", `[audio_import] success file=${selected}`);
+      notice = "导入成功";
+      if (currentAudioId.trim().length === 0) {
+        currentAudioId = created.id;
+      }
+      importName = "";
+      await loadAudios();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      await frontendLog("error", `[audio_import] failed: ${error}`);
+    } finally {
+      importing = false;
+    }
   }
 
   /** 删除一个自定义音效。 */
   async function removeAudio(a: CustomAudio): Promise<void> {
-    if (a.builtin) return;
     error = null;
-    await audioDelete(a.id);
-    await loadAudios();
-    if (currentAudioId === a.id) {
-      currentAudioId = "builtin-white-noise";
+    notice = null;
+    try {
+      await frontendLog("info", `[audio_delete] click id=${a.id} name=${a.name}`);
+      await audioDelete(a.id);
+      await frontendLog("info", `[audio_delete] success id=${a.id}`);
+      notice = "已删除";
+      await loadAudios();
+      if (currentAudioId === a.id) {
+        currentAudioId = "";
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      await frontendLog("error", `[audio_delete] failed: ${error}`);
     }
   }
 
@@ -89,12 +120,14 @@
   <label class="block">
     <div class="mb-1 text-sm text-zinc-700 dark:text-zinc-200">默认音效</div>
     <select
-      class="w-full rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-900 outline-none disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
+      class="w-full rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-900 outline-none disabled:opacity-50 dark:border-white/10 dark:bg-zinc-100/90 dark:text-zinc-900"
       bind:value={currentAudioId}
       disabled={!enabled || loading}
     >
       {#if loading}
         <option value={currentAudioId}>加载中...</option>
+      {:else if audios.length === 0}
+        <option value="">未导入音效</option>
       {:else}
         {#each audios as a (a.id)}
           <option value={a.id}>{a.name}{a.builtin ? "（内置）" : ""}</option>
@@ -106,6 +139,11 @@
   <div class="rounded-2xl bg-black/5 p-3 dark:bg-white/10">
     <div class="mb-2 text-sm font-medium text-zinc-900 dark:text-zinc-50">管理自定义音频</div>
 
+    {#if notice}
+      <div class="mb-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+        {notice}
+      </div>
+    {/if}
     {#if error}
       <div class="mb-2 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">
         操作失败：{error}
@@ -117,14 +155,14 @@
         class="min-w-0 flex-1 rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-900 outline-none disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
         placeholder="导入后显示名称（可选）"
         bind:value={importName}
-        disabled={!enabled}
+        disabled={importing}
       />
       <button
         class="shrink-0 rounded-2xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white shadow hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
         onclick={() => void pickAndImport()}
-        disabled={!enabled}
+        disabled={importing}
       >
-        导入
+        {importing ? "导入中..." : "导入"}
       </button>
     </div>
 

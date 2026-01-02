@@ -28,7 +28,7 @@
   <label class="block">
     <div class="mb-1 text-sm text-zinc-700 dark:text-zinc-200">动画强度</div>
     <select
-      class="w-full rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-900 outline-none disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-50"
+      class="w-full rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-zinc-900 outline-none disabled:opacity-50 dark:border-white/10 dark:bg-zinc-100/90 dark:text-zinc-900"
       bind:value={intensity}
       disabled={!enabled}
     >

@@ -30,11 +30,6 @@ pub fn validate_settings(settings: &Settings) -> AppResult<()> {
     if settings.weekly_goal > 10000 {
         return Err(AppError::Validation("每周目标建议不超过 10000".to_string()));
     }
-    if settings.audio.enabled && settings.audio.current_audio_id.trim().is_empty() {
-        return Err(AppError::Validation(
-            "启用音效时必须选择一个音效".to_string(),
-        ));
-    }
     if settings.audio.volume > 100 {
         return Err(AppError::Validation("音效音量需在 0-100".to_string()));
     }

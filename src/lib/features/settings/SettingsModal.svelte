@@ -28,7 +28,7 @@
     dailyGoal: 8,
     weeklyGoal: 40,
     alwaysOnTop: false,
-    audio: { enabled: true, currentAudioId: "builtin-white-noise", volume: 60, autoPlay: true },
+    audio: { enabled: true, currentAudioId: "", volume: 60, autoPlay: true },
     animation: { enabled: true, comboEnabled: true, intensity: "standard" },
     interruption: { enabled: true, confirmOnInterrupt: true },
   });
