@@ -5,7 +5,7 @@
   import TimerCard from "$lib/features/timer/components/TimerCard.svelte";
   import TagManagerModal from "$lib/features/tags/TagManagerModal.svelte";
   import { appData, appError, appLoading, killSummary, timerSnapshot, workCompleted } from "$lib/stores/appClient";
-  import { recordInterruption, setHistoryRemark } from "$lib/api/tauri";
+  import { frontendLog, recordInterruption, setHistoryRemark } from "$lib/api/tauri";
   import type {
     AppData,
     InterruptionDay,
@@ -31,6 +31,18 @@
   let interruptionRemainingSeconds = $state<bigint>(0n);
 
   let tagManagerOpen = $state(false);
+  let readyLogged = $state(false);
+
+  /** 在首页完成渲染前置条件（快照到齐且不再 loading）时写入一条诊断日志。 */
+  function onHomeReadyEffect(): void {
+    if (readyLogged) return;
+    if ($appLoading || $appError) return;
+    if (!$appData || !$timerSnapshot) return;
+    readyLogged = true;
+    void frontendLog("info", "[frontend] home: ready").catch(() => {});
+  }
+
+  $effect(onHomeReadyEffect);
 
   /** 打开标签管理弹窗。 */
   function openTagManager(): void {
@@ -216,10 +228,6 @@
 
     {#if $appError}
       <div class="rounded-2xl bg-red-500/10 p-4 text-sm text-red-600 dark:text-red-300">加载失败：{$appError}</div>
-    {:else if $appLoading}
-      <div class="rounded-2xl bg-black/5 p-4 text-sm text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
-        正在加载...
-      </div>
     {:else if $appData && $timerSnapshot}
       <div class="flex flex-col items-center gap-4">
         <TimerCard
@@ -232,6 +240,14 @@
           onCreateTag={handleTagCreate}
           onManageTags={openTagManager}
         />
+      </div>
+    {:else if $appLoading}
+      <div class="rounded-2xl bg-black/5 p-4 text-sm text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
+        正在加载...
+      </div>
+    {:else}
+      <div class="rounded-2xl bg-black/5 p-4 text-sm text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
+        初始化已结束，但未获得可用数据；请查看日志或重启应用。
       </div>
     {/if}
   </div>
@@ -256,7 +272,7 @@
 
 {#if $timerSnapshot}
   <CompletionAnimation
-    enabled={$timerSnapshot.settings.animation.enabled}
-    intensity={$timerSnapshot.settings.animation.intensity}
+    enabled={$timerSnapshot.settings?.animation?.enabled ?? false}
+    intensity={$timerSnapshot.settings?.animation?.intensity ?? "standard"}
   />
 {/if}

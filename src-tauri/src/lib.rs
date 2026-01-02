@@ -21,9 +21,6 @@ mod tray;
 pub mod typegen;
 mod window_events;
 
-use crate::app_data::{AppData, STORE_FILE_NAME, STORE_KEY};
-use crate::errors::{AppError, AppResult};
-
 #[cfg(not(test))]
 use std::time::Duration;
 
@@ -31,6 +28,13 @@ use std::time::Duration;
 use tauri::Manager as _;
 #[cfg(not(test))]
 use tauri_plugin_store::StoreExt;
+
+#[cfg(not(test))]
+use crate::app_data::STORE_FILE_NAME;
+#[cfg(not(test))]
+use crate::app_data::{AppData, STORE_KEY};
+#[cfg(not(test))]
+use crate::errors::{AppError, AppResult};
 
 #[cfg(not(test))]
 use crate::state::AppState;
@@ -153,10 +157,11 @@ fn migrate_legacy_store_file(app: &tauri::AppHandle) -> AppResult<()> {
         misplaced_in_root_logs,
     ];
 
-    let Some(source) = candidates
-        .into_iter()
+    let source = candidates
+        .iter()
         .find(|path| path.exists() && path.is_file())
-    else {
+        .cloned();
+    let Some(source) = source else {
         return Ok(());
     };
 

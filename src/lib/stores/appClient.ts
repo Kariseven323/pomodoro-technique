@@ -146,7 +146,15 @@ export async function initAppClient(): Promise<void> {
   }
 
   if (ok) {
-    await registerListeners();
+    try {
+      await withTimeout(registerListeners(), 5000, "注册后端事件监听超时（listen 未返回）。");
+    } catch (e) {
+      void withTimeout(
+        frontendLog("warn", `[frontend] registerListeners failed: ${e instanceof Error ? e.message : String(e)}`),
+        800,
+        "frontend_log timeout",
+      ).catch(() => {});
+    }
   }
 }
 

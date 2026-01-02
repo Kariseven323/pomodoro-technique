@@ -2,8 +2,9 @@
   import "../app.css";
   import { onMount } from "svelte";
   import TabBar from "$lib/components/TabBar.svelte";
-  import { setMiniMode } from "$lib/api/tauri";
+  import { frontendLog, setMiniMode } from "$lib/api/tauri";
   import { appError, appLoading, initAppClient, timerSnapshot } from "$lib/stores/appClient";
+  import { installFrontendErrorLogging } from "$lib/utils/frontendDiagnostics";
   import MiniWindow from "$lib/features/timer/MiniWindow.svelte";
   import { miniMode } from "$lib/stores/uiState";
   import type { TimerSnapshot } from "$lib/shared/types";
@@ -47,6 +48,7 @@
   function setupInitWatchdog(): () => void {
     const id = window.setTimeout(() => {
       if ($appLoading) {
+        void frontendLog("error", "[frontend] init watchdog fired: still loading after 20s").catch(() => {});
         appError.set("初始化超时：前端未能完成与后端的连接，请查看日志或重启应用。");
         appLoading.set(false);
       }
@@ -57,13 +59,17 @@
   }
 
   onMount(() => {
+    installFrontendErrorLogging();
     const cleanup = setupInitWatchdog();
     onInitApp();
     return cleanup;
   });
 
-  let prevSnapshot = $state<TimerSnapshot | null>(null);
-  let autoExitBusy = $state(false);
+  /** 记录上一次 timerSnapshot，用于判断“自然阶段结束”。 */
+  let prevSnapshot: TimerSnapshot | null = null;
+
+  /** 自动退出迷你模式的并发保护标记（不需要响应式）。 */
+  let autoExitBusy = false;
 
   /** 判断一次快照变更是否符合“自然阶段结束”的特征。 */
   function isNaturalPhaseEnd(prev: TimerSnapshot, next: TimerSnapshot): boolean {
@@ -108,8 +114,10 @@
 {#if $miniMode}
   <MiniWindow timer={$timerSnapshot} />
 {:else}
-  <div class="pb-24">
-    {@render props.children?.()}
+  <div class="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+    <div class="pb-24">
+      {@render props.children?.()}
+    </div>
+    <TabBar />
   </div>
-  <TabBar />
 {/if}

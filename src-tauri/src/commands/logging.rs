@@ -1,7 +1,5 @@
 //! 日志相关命令：打开日志目录、前端诊断日志桥接等。
 
-#[cfg(not(debug_assertions))]
-use crate::errors::AppError;
 use crate::errors::AppResult;
 
 /// 前端日志桥接的内部实现：按 level 写入 tracing。
@@ -17,12 +15,38 @@ pub(crate) fn frontend_log_impl(level: &str, message: &str) -> AppResult<bool> {
     Ok(true)
 }
 
-/// 前端日志桥接的内部实现：非开发环境直接拒绝（避免 release 包携带诊断日志入口）。
+/// 将前端上报的日志内容做基础清洗与截断，避免单条日志过长影响可读性。
+fn sanitize_frontend_log_message(message: &str) -> String {
+    const MAX_CHARS: usize = 4_000;
+    let trimmed = message.trim();
+    if trimmed.chars().count() <= MAX_CHARS {
+        return trimmed.to_string();
+    }
+    let mut out = String::with_capacity(MAX_CHARS + 16);
+    for (i, ch) in trimmed.chars().enumerate() {
+        if i >= MAX_CHARS {
+            break;
+        }
+        out.push(ch);
+    }
+    out.push_str("…(truncated)");
+    out
+}
+
+/// 前端日志桥接的内部实现：release 也允许写入（忽略 debug，避免将该入口用于高频噪声日志）。
 #[cfg(not(debug_assertions))]
-pub(crate) fn frontend_log_impl(_level: &str, _message: &str) -> AppResult<bool> {
-    Err(AppError::Validation(
-        "仅开发环境可使用前端诊断日志（frontend_log）".to_string(),
-    ))
+pub(crate) fn frontend_log_impl(level: &str, message: &str) -> AppResult<bool> {
+    let lvl = level.trim().to_lowercase();
+    let msg = sanitize_frontend_log_message(message);
+    match lvl.as_str() {
+        "warn" | "warning" => tracing::warn!(target: "frontend", "{msg}"),
+        "error" => tracing::error!(target: "frontend", "{msg}"),
+        "debug" => {
+            // release 下默认忽略 debug，避免高频噪声日志写入文件。
+        }
+        _ => tracing::info!(target: "frontend", "{msg}"),
+    }
+    Ok(true)
 }
 
 #[cfg(test)]
