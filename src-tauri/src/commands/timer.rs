@@ -40,13 +40,15 @@ fn timer_start_transition_with_deps<S: CommandState>(
         state.timer_snapshot().remaining_seconds
     );
 
+    // 先广播“已开始”的快照，避免 start 内部终止黑名单进程较慢时 UI 看起来仍是“未开始”，从而诱发用户二次点击导致 pause。
+    let _ = state.emit_timer_snapshot();
+
     if should_kill {
         tracing::info!(target: "blacklist", "工作阶段首次开始，尝试终止黑名单进程：{:?}", names_to_kill);
         let payload = kill_names(&names_to_kill);
         let _ = state.emit_kill_result(payload);
     }
 
-    let _ = state.emit_timer_snapshot();
     Ok(())
 }
 

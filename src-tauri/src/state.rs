@@ -70,6 +70,17 @@ impl AppState {
         self.data.lock().unwrap().clone()
     }
 
+    /// 读取黑名单进程名列表（用于后台守护/终止逻辑，避免克隆整个 `AppData`）。
+    pub fn blacklist_names_snapshot(&self) -> Vec<String> {
+        self.data
+            .lock()
+            .unwrap()
+            .blacklist
+            .iter()
+            .map(|b| b.name.clone())
+            .collect()
+    }
+
     /// 获取计时器运行态快照（用于前端渲染/托盘刷新）。
     pub fn timer_snapshot(&self) -> TimerSnapshot {
         let data = self.data.lock().unwrap();

@@ -36,7 +36,51 @@ pub struct KillSummary {
     pub requires_admin: bool,
 }
 
+/// 批量终止若干进程名（best-effort，单次进程快照）：只刷新一次进程列表，避免每个名称重复 `refresh_all`。
+pub fn kill_names_best_effort_single_snapshot(names: &[String]) -> KillSummary {
+    kill_names_best_effort_single_snapshot_with(names, |pid| kill_pid(pid))
+}
+
+/// `kill_names_best_effort_single_snapshot` 的可注入实现：便于单元测试中 mock `kill_pid`。
+fn kill_names_best_effort_single_snapshot_with(
+    names: &[String],
+    mut kill_pid_fn: impl FnMut(u32) -> AppResult<bool>,
+) -> KillSummary {
+    if names.is_empty() {
+        return KillSummary {
+            items: Vec::new(),
+            requires_admin: false,
+        };
+    }
+
+    let mut system = System::new_all();
+    system.refresh_all();
+
+    let pid_index = build_pid_index(
+        system
+            .processes()
+            .iter()
+            .map(|(pid, p)| (pid.as_u32(), p.name())),
+    );
+
+    let mut all_items = Vec::new();
+    let mut requires_admin = false;
+
+    for name in names {
+        if let Ok(summary) = kill_by_name_from_pid_index(name, &pid_index, &mut kill_pid_fn) {
+            requires_admin |= summary.requires_admin;
+            all_items.extend(summary.items);
+        }
+    }
+
+    KillSummary {
+        items: all_items,
+        requires_admin,
+    }
+}
+
 /// 终止所有匹配 `process_name` 的进程（返回可用于 UI 展示的汇总结果）。
+#[cfg(test)]
 fn kill_by_name(process_name: &str) -> AppResult<KillSummary> {
     tracing::debug!(target: "blacklist", "尝试终止进程：{}", process_name);
     let mut system = System::new_all();
@@ -49,7 +93,65 @@ fn kill_by_name(process_name: &str) -> AppResult<KillSummary> {
     kill_by_name_from_entries(process_name, entries, |pid| kill_pid(pid))
 }
 
+/// 从“PID 索引”中找出并终止匹配名称的进程（用于单次进程快照场景）。
+fn kill_by_name_from_pid_index(
+    process_name: &str,
+    pid_index: &std::collections::HashMap<String, Vec<u32>>,
+    kill_pid_fn: &mut impl FnMut(u32) -> AppResult<bool>,
+) -> AppResult<KillSummary> {
+    let key = normalize_process_key(process_name);
+    let mut pids = pid_index.get(&key).cloned().unwrap_or_default();
+    pids.sort_unstable();
+
+    if pids.is_empty() {
+        tracing::debug!(target: "blacklist", "未找到匹配进程：{}", process_name);
+        return Ok(KillSummary {
+            items: vec![KillItem {
+                name: process_name.to_string(),
+                pids,
+                killed: 0,
+                failed: 0,
+                requires_admin: false,
+            }],
+            requires_admin: false,
+        });
+    }
+
+    let (killed, failed, requires_admin) = kill_pids(&pids, kill_pid_fn)?;
+    let items = vec![KillItem {
+        name: process_name.to_string(),
+        pids,
+        killed,
+        failed,
+        requires_admin,
+    }];
+
+    if failed > 0 {
+        tracing::warn!(
+            target: "blacklist",
+            "终止进程存在失败：name={} killed={} failed={} requiresAdmin={}",
+            process_name,
+            killed,
+            failed,
+            requires_admin
+        );
+    } else {
+        tracing::info!(
+            target: "blacklist",
+            "终止进程成功：name={} killed={}",
+            process_name,
+            killed
+        );
+    }
+
+    Ok(KillSummary {
+        items,
+        requires_admin,
+    })
+}
+
 /// `kill_by_name` 的可测试实现：接受“进程快照条目”与可注入的 `kill_pid`，避免单测触发系统调用。
+#[cfg(test)]
 fn kill_by_name_from_entries<I>(
     process_name: &str,
     entries: I,
@@ -147,12 +249,41 @@ fn kill_pids(
     Ok((killed, failed, requires_admin))
 }
 
+/// 构建进程名到 PID 列表的索引（Windows 下按不区分大小写的 key 聚合）。
+fn build_pid_index<'a, I>(entries: I) -> std::collections::HashMap<String, Vec<u32>>
+where
+    I: IntoIterator<Item = (u32, &'a str)>,
+{
+    let mut map: std::collections::HashMap<String, Vec<u32>> = std::collections::HashMap::new();
+    for (pid, name) in entries {
+        map.entry(normalize_process_key(name))
+            .or_default()
+            .push(pid);
+    }
+    map
+}
+
+/// 规范化进程名 key（Windows 下统一为 ASCII 小写；非 Windows 保持原样）。
+fn normalize_process_key(name: &str) -> String {
+    #[cfg(windows)]
+    {
+        name.to_ascii_lowercase()
+    }
+
+    #[cfg(not(windows))]
+    {
+        name.to_string()
+    }
+}
+
 /// 批量终止若干进程名（best-effort）：忽略单个名称的错误并合并为一次汇总结果。
 pub fn kill_names_best_effort(names: &[String]) -> KillSummary {
-    kill_names_best_effort_with(names, |name| kill_by_name(name))
+    // 默认使用“单次进程快照”实现，避免在黑名单较长时产生过多重复枚举开销。
+    kill_names_best_effort_single_snapshot(names)
 }
 
 /// `kill_names_best_effort` 的可注入实现：便于在单元测试中 mock `kill_by_name`。
+#[cfg(test)]
 fn kill_names_best_effort_with(
     names: &[String],
     mut kill_by_name_fn: impl FnMut(&str) -> AppResult<KillSummary>,
@@ -240,13 +371,13 @@ fn kill_pid_windows(pid: u32) -> AppResult<bool> {
 }
 
 /// 进程名对比（Windows 下不区分大小写）。
-#[cfg(windows)]
+#[cfg(all(test, windows))]
 fn eq_process_name(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
 }
 
 /// 进程名对比（非 Windows：保持大小写敏感，避免误杀）。
-#[cfg(not(windows))]
+#[cfg(all(test, not(windows)))]
 fn eq_process_name(a: &str, b: &str) -> bool {
     a == b
 }

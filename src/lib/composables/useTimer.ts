@@ -29,14 +29,20 @@ export function useTimer(deps: UseTimerDeps): UseTimerApi {
     return e instanceof Error ? e.message : String(e);
   }
 
+  let toggleInFlight = false;
+
   /** 切换开始/暂停（根据当前快照判断）。 */
   async function toggleStartPause(): Promise<void> {
+    if (toggleInFlight) return;
     const snapshot = get(timerSnapshot);
     if (!snapshot) return;
+    toggleInFlight = true;
     try {
       await (snapshot.isRunning ? timerPause() : timerStart());
     } catch (e) {
       deps.showToast(formatError(e));
+    } finally {
+      toggleInFlight = false;
     }
   }
 
